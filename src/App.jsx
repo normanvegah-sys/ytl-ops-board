@@ -1,0 +1,1186 @@
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
+
+
+// ── Supabase ────────────────────────────────────────────────────────────────
+const SUPA_URL = "https://cylukbboxdltocolmzft.supabase.co";
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN5bHVrYmJveGRsdG9jb2xtemZ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4MTcxNjUsImV4cCI6MjA4ODM5MzE2NX0.RIqeun179pozW7ph4kPWk_oKk7GpuwEDjxKkqOYJoIo";
+const supabase = createClient(SUPA_URL, SUPA_KEY);
+
+async function dbLoad(key){ 
+  const {data,error}=await supabase.from("board_state").select("value").eq("key",key).single();
+  if(error||!data) return null;
+  return data.value;
+}
+async function dbSave(key,value){
+  await supabase.from("board_state").upsert({key,value,updated_at:new Date().toISOString()},{onConflict:"key"});
+}
+
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const WEEKS = ["Week 1","Week 2","Week 3","Week 4"];
+const DESIGNERS = ["Eddy","Claus"];
+
+const STATUSES = [
+  "New Request","Working on Brief","Working on Design",
+  "Under Norman's Review","Under Gia's Review","Sent to Client",
+  "Changes Needed","Pending Client's Approval","Approved",
+  "Pending Last Week's Deployment","Deployed",
+];
+const SC = {
+  "New Request":                    {bg:"#EEF2FF",text:"#4338CA",dot:"#6366F1",border:"#C7D2FE",pie:"#6366F1"},
+  "Working on Brief":               {bg:"#FFF7ED",text:"#C2410C",dot:"#F97316",border:"#FED7AA",pie:"#F97316"},
+  "Working on Design":              {bg:"#FFFBEB",text:"#B45309",dot:"#F59E0B",border:"#FDE68A",pie:"#F59E0B"},
+  "Under Norman's Review":          {bg:"#F0FDF4",text:"#166534",dot:"#22C55E",border:"#BBF7D0",pie:"#22C55E"},
+  "Under Gia's Review":             {bg:"#F0FDFA",text:"#0F766E",dot:"#14B8A6",border:"#99F6E4",pie:"#14B8A6"},
+  "Sent to Client":                 {bg:"#EFF6FF",text:"#1D4ED8",dot:"#3B82F6",border:"#BFDBFE",pie:"#3B82F6"},
+  "Changes Needed":                 {bg:"#FFF1F2",text:"#BE123C",dot:"#F43F5E",border:"#FECDD3",pie:"#F43F5E"},
+  "Pending Client's Approval":      {bg:"#FFF8F1",text:"#92400E",dot:"#D97706",border:"#FDE68A",pie:"#FBBF24"},
+  "Approved":                       {bg:"#F0FDF4",text:"#15803D",dot:"#16A34A",border:"#86EFAC",pie:"#16A34A"},
+  "Pending Last Week's Deployment": {bg:"#FFF8F1",text:"#92400E",dot:"#D97706",border:"#FCD34D",pie:"#D97706"},
+  "Deployed":                       {bg:"#F5F3FF",text:"#7C3AED",dot:"#8B5CF6",border:"#DDD6FE",pie:"#8B5CF6"},
+};
+
+const SM_STATUSES = [
+  "Drafted","In Design","Pending Norman's Review","Pending Gia's Review",
+  "Pending Content / Missing Assets","Pending Client's Approval",
+  "Approved","Scheduled","Posted",
+];
+const SSC = {
+  "Drafted":                           {bg:"#FFFBEB",text:"#B45309",dot:"#F59E0B",border:"#FDE68A",pie:"#F59E0B"},
+  "In Design":                         {bg:"#F5F3FF",text:"#7C3AED",dot:"#8B5CF6",border:"#DDD6FE",pie:"#8B5CF6"},
+  "Pending Norman's Review":           {bg:"#F0FDF4",text:"#166534",dot:"#22C55E",border:"#BBF7D0",pie:"#22C55E"},
+  "Pending Gia's Review":              {bg:"#F0FDFA",text:"#0F766E",dot:"#14B8A6",border:"#99F6E4",pie:"#14B8A6"},
+  "Pending Content / Missing Assets":  {bg:"#FFF1F2",text:"#BE123C",dot:"#F43F5E",border:"#FECDD3",pie:"#F43F5E"},
+  "Pending Client's Approval":         {bg:"#FFF8F1",text:"#92400E",dot:"#D97706",border:"#FDE68A",pie:"#FBBF24"},
+  "Approved":                          {bg:"#F0FDF4",text:"#15803D",dot:"#16A34A",border:"#86EFAC",pie:"#16A34A"},
+  "Scheduled":                         {bg:"#EFF6FF",text:"#1D4ED8",dot:"#3B82F6",border:"#BFDBFE",pie:"#3B82F6"},
+  "Posted":                            {bg:"#F0FDF4",text:"#065F46",dot:"#059669",border:"#6EE7B7",pie:"#059669"},
+};
+
+const SCOPE_NUM = {"Per Request":null,"2 Eblasts/MO":2,"3 Eblasts/MO":3,"4 Eblasts/MO":4,"5 Eblasts/MO":5};
+const SCOPE_C   = {
+  "Per Request":  {bg:"#FFF7ED",text:"#C2410C"},
+  "2 Eblasts/MO": {bg:"#EEF2FF",text:"#4338CA"},
+  "3 Eblasts/MO": {bg:"#F0FDF4",text:"#15803D"},
+  "4 Eblasts/MO": {bg:"#EFF6FF",text:"#1D4ED8"},
+  "5 Eblasts/MO": {bg:"#F5F3FF",text:"#7C3AED"},
+};
+
+const EB_DEFAULTS = [
+  {id:"susan",   name:"Susan Trevisa",       scope:"4 Eblasts/MO"},
+  {id:"madelyn", name:"Madelyn Mejia",        scope:"3 Eblasts/MO"},
+  {id:"vis",     name:"Visconti",             scope:"2 Eblasts/MO"},
+  {id:"tlg",     name:"The Light Group",      scope:"4 Eblasts/MO"},
+  {id:"dean",    name:"Dean Bloch",           scope:"4 Eblasts/MO"},
+  {id:"pietro",  name:"Pietro Belmonte",      scope:"5 Eblasts/MO"},
+  {id:"edge",    name:"Edge House Miami",     scope:"4 Eblasts/MO"},
+  {id:"chanel",  name:"Chanel Hunter Milian", scope:"Per Request"},
+  {id:"joe",     name:"Joe Schafer",          scope:"4 Eblasts/MO"},
+  {id:"shawn",   name:"Shawn Clarke",         scope:"4 Eblasts/MO"},
+  {id:"river",   name:"River District 14",    scope:"4 Eblasts/MO"},
+  {id:"vsg",     name:"Vecchi Stoka",         scope:"2 Eblasts/MO"},
+  {id:"paul",    name:"Paul Basile",          scope:"3 Eblasts/MO"},
+  {id:"daniel",  name:"Daniel Novela",        scope:"Per Request"},
+];
+
+const SM_AGENTS = [
+  {id:"smd",  name:"Dean",         note:"3 posts + 2 stories/wk"},
+  {id:"smj",  name:"Joseph",       note:"3 posts/wk"},
+  {id:"smk",  name:"Kane",         note:""},
+  {id:"smp",  name:"Paul",         note:""},
+  {id:"smpi", name:"Pietro",       note:""},
+  {id:"sms",  name:"Shawn Clarke", note:""},
+  {id:"smsu", name:"Susan",        note:""},
+  {id:"smtl", name:"TLG",          note:""},
+  {id:"smtr", name:"TRC",          note:""},
+  {id:"smv",  name:"Visconti",     note:""},
+  {id:"smvg", name:"VSG",          note:""},
+];
+const SM_DEVS = [
+  {id:"sm72", name:"72 Carlyle",      note:""},
+  {id:"smrd", name:"RD14",            note:""},
+  {id:"smrz", name:"Ritz Carlton SB", note:""},
+];
+
+let _id = 0;
+function uid() { return "u"+(++_id)+Math.random().toString(36).slice(2,5); }
+function newEblast()    { return {id:uid(),name:"",status:"New Request",designer:"Eddy",week:"Week 1",urgent:false,note:""}; }
+function newSmPost()    { return {id:uid(),name:"",status:"Drafted",needsDesign:false,urgent:false}; }
+function newSmBatch(w)  { return {id:uid(),week:w,status:"Drafted",startDate:"",endDate:"",posts:[]}; }
+
+function buildEbData() {
+  const d={};
+  MONTHS.forEach((_,mi)=>{
+    d[mi]=EB_DEFAULTS.map(c=>({clientId:c.id+mi,clientName:c.name,scope:c.scope,expanded:false,eblasts:[newEblast()]}));
+  });
+  return d;
+}
+function buildSmData() {
+  const d={};
+  MONTHS.forEach((_,mi)=>{
+    const mk=(c,type)=>({clientId:c.id+mi,clientName:c.name,note:c.note,type,expanded:false,batches:WEEKS.map(w=>newSmBatch(w))});
+    d[mi]=[...SM_AGENTS.map(c=>mk(c,"agent")),...SM_DEVS.map(c=>mk(c,"dev"))];
+  });
+  return d;
+}
+
+function fmtRange(s,e){
+  if(s&&e) return `${s} – ${e}`;
+  return s||e||null;
+}
+
+// ── Shared UI ──────────────────────────────────────────────────────────────
+function ScopeBadge({scope}){
+  if(!scope) return null;
+  const c=SCOPE_C[scope]||{bg:"#F3F4F6",text:"#6B7280"};
+  return <span style={{background:c.bg,color:c.text,padding:"2px 10px",borderRadius:20,fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>{scope}</span>;
+}
+
+function TTip({active,payload}){
+  if(!active||!payload?.length) return null;
+  const d=payload[0];
+  return <div style={{background:"#1a1a2e",color:"#fff",padding:"8px 14px",borderRadius:8,fontSize:12,fontFamily:"'DM Sans',sans-serif",boxShadow:"0 4px 16px rgba(0,0,0,.2)"}}><div style={{fontWeight:700}}>{d.name}</div><div style={{color:"#C4BFBA",marginTop:2}}>{d.value} item{d.value!==1?"s":""}</div></div>;
+}
+
+function PieLabel({cx,cy,midAngle,innerRadius,outerRadius,percent}){
+  if(percent<0.05) return null;
+  const R=Math.PI/180,r=innerRadius+(outerRadius-innerRadius)*0.6;
+  return <text x={cx+r*Math.cos(-midAngle*R)} y={cy+r*Math.sin(-midAngle*R)} fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={700}>{Math.round(percent*100)}%</text>;
+}
+
+
+function SearchBar({value, onChange, placeholder}){
+  return (
+    <div style={{position:"relative",flex:"1 1 180px",maxWidth:280}}>
+      <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:13,pointerEvents:"none",color:"#9CA3AF"}}>🔍</span>
+      <input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder||"Search clients..."} style={{width:"100%",paddingLeft:32,paddingRight:value?28:10,paddingTop:7,paddingBottom:7,border:"1.5px solid #E5E2DC",borderRadius:8,fontSize:12.5,fontFamily:"'DM Sans',sans-serif",color:"#1a1a2e",background:"#fff",outline:"none",boxSizing:"border-box"}}/>
+      {value&&<button onClick={()=>onChange("")} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#9CA3AF",fontSize:13,lineHeight:1,padding:0}}>✕</button>}
+    </div>
+  );
+}
+
+function AZBtn({sorted,onToggle}){
+  return <button onClick={onToggle} style={{background:sorted?"#1a1a2e":"#F0EEE9",color:sorted?"#fff":"#6B6860",border:"none",borderRadius:7,padding:"7px 13px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"'DM Sans',sans-serif",transition:"all .15s"}}>A–Z {sorted?"✓":"↕"}</button>;
+}
+
+function SubTabs({options,active,onChange}){
+  return <div style={{display:"flex",background:"#F0EEE9",borderRadius:10,padding:4,width:"fit-content"}}>{options.map((o,i)=><button key={o} onClick={()=>onChange(i)} style={{background:active===i?"#fff":"transparent",border:"none",borderRadius:7,padding:"7px 18px",cursor:"pointer",fontSize:12.5,fontFamily:"'DM Sans',sans-serif",fontWeight:active===i?700:500,color:active===i?"#1a1a2e":"#9CA3AF",boxShadow:active===i?"0 1px 4px rgba(0,0,0,.1)":"none",transition:"all .15s",whiteSpace:"nowrap"}}>{o}</button>)}</div>;
+}
+
+function MonthSidebar({months,active,setActive,getData}){
+  return (
+    <div style={{width:130,flexShrink:0,background:"#F8F7F4",borderRight:"1px solid #E5E2DC",overflowY:"auto",padding:"6px 0"}}>
+      {months.map((m,i)=>{
+        const {top,bot}=getData(i);
+        return <button key={m} onClick={()=>setActive(i)} style={{width:"100%",textAlign:"left",padding:"8px 13px",background:active===i?"#fff":"transparent",borderLeft:active===i?"3px solid #1a1a2e":"3px solid transparent",border:"none",cursor:"pointer",fontSize:12.5,fontFamily:"'DM Sans',sans-serif",fontWeight:active===i?700:500,color:active===i?"#1a1a2e":"#6B6860"}}>{m}<span style={{display:"block",fontSize:10,color:"#9CA3AF",fontWeight:400,marginTop:1}}>{top}/{bot}</span></button>;
+      })}
+    </div>
+  );
+}
+
+function EmptyMsg({msg,onAdd}){
+  return <div style={{textAlign:"center",padding:"44px 20px",color:"#9CA3AF",fontFamily:"'DM Sans',sans-serif",fontSize:14,background:"#FAFAF9",borderRadius:12,border:"2px dashed #E5E2DC"}}><div style={{fontSize:30,marginBottom:8}}>📭</div>{msg}{onAdd&&<><br/><button onClick={onAdd} style={{marginTop:10,background:"none",border:"none",color:"#6366F1",fontWeight:700,cursor:"pointer",fontSize:13}}>+ Add first client</button></>}</div>;
+}
+
+function ComingSoon({label}){
+  return <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",gap:12,color:"#9CA3AF",fontFamily:"'DM Sans',sans-serif"}}><div style={{fontSize:40}}>🚧</div><div style={{fontSize:18,fontWeight:700,color:"#374151",fontFamily:"'DM Serif Display',serif"}}>{label}</div><div style={{fontSize:13}}>Coming soon</div></div>;
+}
+
+// ── Eblast Pipeline ────────────────────────────────────────────────────────
+function EbRow({eblast,onChange,onRemove,canRemove}){
+  const c=SC[eblast.status];
+  return (
+    <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",background:eblast.urgent?"#FFF1F2":"#FAFAF9",borderRadius:8,padding:"9px 11px",border:eblast.urgent?"1.5px solid #FECDD3":"1px solid #EEEBE6"}}>
+      <div style={{flex:"0 0 88px",position:"relative"}}>
+        <select value={eblast.week} onChange={e=>onChange("week",e.target.value)} style={{width:"100%",border:"1.5px solid #E5E2DC",borderRadius:7,padding:"5px 20px 5px 8px",fontSize:11.5,fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:"#6B6860",background:"#F0EEE9",outline:"none",cursor:"pointer",appearance:"none",boxSizing:"border-box"}}>
+          {WEEKS.map(w=><option key={w}>{w}</option>)}
+        </select>
+        <span style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",fontSize:8,color:"#9CA3AF"}}>▾</span>
+      </div>
+      <input value={eblast.name} onChange={e=>onChange("name",e.target.value)} placeholder="Eblast name..." style={{flex:"1 1 140px",border:"1.5px solid #E5E2DC",borderRadius:7,padding:"5px 9px",fontSize:12.5,fontFamily:"'DM Sans',sans-serif",color:"#1a1a2e",background:"#fff",outline:"none",boxSizing:"border-box"}}/>
+      <div style={{flex:"0 0 188px",position:"relative"}}>
+        <select value={eblast.status} onChange={e=>onChange("status",e.target.value)} style={{width:"100%",border:"1.5px solid #E5E2DC",borderRadius:7,padding:"5px 24px 5px 9px",fontSize:11,fontFamily:"'DM Sans',sans-serif",fontWeight:600,color:c?.text,background:c?.bg,outline:"none",cursor:"pointer",appearance:"none",boxSizing:"border-box"}}>
+          {STATUSES.map(s=><option key={s}>{s}</option>)}
+        </select>
+        <span style={{position:"absolute",right:7,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",fontSize:8,color:"#9CA3AF"}}>▾</span>
+      </div>
+      <div style={{flex:"0 0 88px",position:"relative"}}>
+        <select value={eblast.designer} onChange={e=>onChange("designer",e.target.value)} style={{width:"100%",border:"1.5px solid #E5E2DC",borderRadius:7,padding:"5px 20px 5px 9px",fontSize:12.5,fontFamily:"'DM Sans',sans-serif",fontWeight:600,color:"#1a1a2e",background:"#fff",outline:"none",cursor:"pointer",appearance:"none",boxSizing:"border-box"}}>
+          {DESIGNERS.map(d=><option key={d}>{d}</option>)}
+        </select>
+        <span style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",fontSize:8,color:"#9CA3AF"}}>▾</span>
+      </div>
+      <button onClick={()=>onChange("urgent",!eblast.urgent)} title={eblast.urgent?"Remove urgent flag":"Mark as urgent"} style={{background:"none",border:"none",cursor:"pointer",fontSize:14,padding:"2px 3px",lineHeight:1,opacity:eblast.urgent?1:0.35}} onMouseEnter={e=>e.currentTarget.style.opacity="1"} onMouseLeave={e=>e.currentTarget.style.opacity=eblast.urgent?"1":"0.35"}>🚨</button>
+      {canRemove&&<button onClick={onRemove} style={{background:"none",border:"none",cursor:"pointer",color:"#D1D5DB",fontSize:14,padding:"2px 4px",lineHeight:1}} onMouseEnter={e=>e.currentTarget.style.color="#F43F5E"} onMouseLeave={e=>e.currentTarget.style.color="#D1D5DB"}>✕</button>}
+    </div>
+  );
+}
+
+function EbClientCard({client,onUpdate,onRemove}){
+  function upd(eid,f,v){onUpdate({...client,eblasts:client.eblasts.map(e=>e.id===eid?{...e,[f]:v}:e)});}
+  function add(){onUpdate({...client,eblasts:[...client.eblasts,newEblast()],expanded:true});}
+  function rem(eid){const u=client.eblasts.filter(e=>e.id!==eid);onUpdate({...client,eblasts:u.length?u:[newEblast()]});}
+  const dep=client.eblasts.filter(e=>e.status==="Deployed").length,tot=client.eblasts.length;
+  const urgCnt=client.eblasts.filter(e=>e.urgent).length;
+  return (
+    <div style={{background:"#fff",borderRadius:12,border:"1px solid #E5E2DC",boxShadow:"0 1px 4px rgba(0,0,0,.04)",overflow:"hidden"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"13px 16px",cursor:"pointer",userSelect:"none"}} onClick={()=>onUpdate({...client,expanded:!client.expanded})}>
+        <span style={{fontSize:10,color:"#9CA3AF",transform:client.expanded?"rotate(90deg)":"rotate(0)",transition:"transform .2s",flexShrink:0,width:12}}>▶</span>
+        <div style={{flex:1,minWidth:0,fontSize:13.5,fontWeight:700,color:"#1a1a2e",fontFamily:"'DM Sans',sans-serif",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{client.clientName}</div>
+        {urgCnt>0&&<span style={{fontSize:10.5,fontWeight:700,color:"#BE123C",background:"#FFF1F2",border:"1px solid #FECDD3",borderRadius:20,padding:"1px 8px",whiteSpace:"nowrap"}}>🚨 {urgCnt}</span>}
+        <ScopeBadge scope={client.scope}/>
+        <span style={{fontSize:11,color:"#9CA3AF",whiteSpace:"nowrap"}}>{dep}/{tot}</span>
+        <div style={{width:56,height:4,background:"#F0EEE9",borderRadius:2,flexShrink:0}}><div style={{width:(tot?(dep/tot)*100:0)+"%",height:"100%",background:"#8B5CF6",borderRadius:2}}/></div>
+        <button onClick={e=>{e.stopPropagation();add();}} style={{background:"#F0EEE9",border:"none",borderRadius:6,padding:"3px 9px",fontSize:11,fontWeight:700,color:"#6B6860",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a2e";e.currentTarget.style.color="#fff";}} onMouseLeave={e=>{e.currentTarget.style.background="#F0EEE9";e.currentTarget.style.color="#6B6860";}}>+ Eblast</button>
+        <button onClick={e=>{e.stopPropagation();onUpdate({...client,showNote:!client.showNote});}} title="Client note" style={{background:client.showNote||client.clientNote?"#FFFBEB":"none",border:client.clientNote?"1.5px solid #FDE68A":"none",borderRadius:6,padding:"3px 7px",fontSize:13,cursor:"pointer",opacity:client.showNote||client.clientNote?1:0.4}} onMouseEnter={e=>e.currentTarget.style.opacity="1"} onMouseLeave={e=>e.currentTarget.style.opacity=client.showNote||client.clientNote?"1":"0.4"}>📝</button>
+        <button onClick={e=>{e.stopPropagation();onRemove();}} style={{background:"none",border:"none",cursor:"pointer",color:"#D1D5DB",fontSize:15,padding:"2px 3px",lineHeight:1}} onMouseEnter={e=>e.currentTarget.style.color="#F43F5E"} onMouseLeave={e=>e.currentTarget.style.color="#D1D5DB"}>✕</button>
+      </div>
+      {(client.showNote||client.clientNote)&&<div style={{padding:"0 16px 8px"}}><textarea value={client.clientNote||""} onChange={e=>onUpdate({...client,clientNote:e.target.value})} placeholder="Add a note for this client... (e.g. on vacation March 10, new brand guidelines pending)" rows={2} style={{width:"100%",border:"1.5px solid #FDE68A",borderRadius:7,padding:"6px 10px",fontSize:12,fontFamily:"'DM Sans',sans-serif",color:"#92400E",background:"#FFFBEB",outline:"none",resize:"vertical",boxSizing:"border-box"}}/></div>}
+      {client.expanded&&(
+        <div style={{padding:"0 16px 13px",display:"flex",flexDirection:"column",gap:6}}>
+          <div style={{display:"flex",gap:8,marginBottom:1}}>
+            {[["Week","0 0 88px"],["Eblast Name","1 1 140px"],["Status","0 0 188px"],["Designer","0 0 88px"]].map(([l,f])=><div key={l} style={{fontSize:9.5,fontWeight:700,color:"#9CA3AF",letterSpacing:"0.07em",textTransform:"uppercase",flex:f}}>{l}</div>)}
+            <div style={{width:22}}/>
+          </div>
+          {client.eblasts.map(e=><EbRow key={e.id} eblast={e} onChange={(f,v)=>upd(e.id,f,v)} onRemove={()=>rem(e.id)} canRemove={client.eblasts.length>1}/>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EbStatusBreakdown({clients}){
+  const grouped=useMemo(()=>{const m={};STATUSES.forEach(s=>{m[s]=[];});clients.forEach(c=>c.eblasts.forEach(e=>m[e.status].push({...e,clientName:c.clientName})));return m;},[clients]);
+  const pieData=STATUSES.map(s=>({name:s,value:grouped[s].length})).filter(d=>d.value>0);
+  const {prod,allow}=useMemo(()=>{let p=0,a=0;clients.forEach(c=>{p+=c.eblasts.length;const n=SCOPE_NUM[c.scope];if(n!=null)a+=n;});return{prod:p,allow:a};},[clients]);
+  const prodData=useMemo(()=>{const ov=Math.max(0,prod-allow),un=Math.max(0,allow-prod),mt=Math.min(prod,allow);return[{name:"Produced",value:mt,color:"#16A34A"},ov>0?{name:"Over Allowance",value:ov,color:"#F43F5E"}:null,un>0?{name:"Remaining",value:un,color:"#E5E2DC"}:null].filter(Boolean);},[prod,allow]);
+  const active=STATUSES.filter(s=>grouped[s].length>0),empty=STATUSES.filter(s=>grouped[s].length===0);
+  if(!clients.length) return <EmptyMsg msg="No data yet."/>;
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+        <div style={{flex:"1 1 320px",background:"#fff",borderRadius:14,border:"1px solid #E5E2DC",padding:"18px 20px",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
+          <div style={{fontSize:11,fontWeight:800,color:"#1a1a2e",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:2}}>Status Distribution</div>
+          <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>{clients.reduce((a,c)=>a+c.eblasts.length,0)} total eblasts</div>
+          <ResponsiveContainer width="100%" height={220}><PieChart><Pie data={pieData} cx="50%" cy="50%" outerRadius={85} dataKey="value" labelLine={false} label={<PieLabel/>}>{pieData.map((d,i)=><Cell key={i} fill={SC[d.name]?.pie||"#9CA3AF"}/>)}</Pie><Tooltip content={<TTip/>}/><Legend iconType="circle" iconSize={8} formatter={v=><span style={{fontSize:11,color:"#374151"}}>{v}</span>} wrapperStyle={{paddingTop:10}}/></PieChart></ResponsiveContainer>
+        </div>
+        <div style={{flex:"1 1 260px",background:"#fff",borderRadius:14,border:"1px solid #E5E2DC",padding:"18px 20px",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
+          <div style={{fontSize:11,fontWeight:800,color:"#1a1a2e",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:2}}>Production vs Allowance</div>
+          <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>{prod} produced · {allow} contracted</div>
+          <ResponsiveContainer width="100%" height={150}><PieChart><Pie data={prodData} cx="50%" cy="50%" outerRadius={65} dataKey="value" labelLine={false} label={<PieLabel/>}>{prodData.map((d,i)=><Cell key={i} fill={d.color}/>)}</Pie><Tooltip content={<TTip/>}/><Legend iconType="circle" iconSize={8} formatter={v=><span style={{fontSize:11,color:"#374151"}}>{v}</span>} wrapperStyle={{paddingTop:8}}/></PieChart></ResponsiveContainer>
+          <div style={{display:"flex",gap:8,marginTop:10}}>
+            {[{l:"Produced",v:prod,c:"#16A34A"},{l:"Contracted",v:allow,c:"#3B82F6"},{l:prod>allow?"Over":"Remaining",v:Math.abs(prod-allow),c:prod>allow?"#F43F5E":"#9CA3AF"}].map(s=>(
+              <div key={s.l} style={{flex:1,textAlign:"center",background:"#FAFAF9",borderRadius:8,padding:"8px 4px"}}>
+                <div style={{fontSize:18,fontWeight:700,color:s.c,fontFamily:"'DM Serif Display',serif"}}>{s.v}</div>
+                <div style={{fontSize:10,color:"#9CA3AF",fontWeight:600,marginTop:1}}>{s.l}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      {active.map(status=>{const c=SC[status],items=grouped[status];return(
+        <div key={status} style={{background:"#fff",borderRadius:12,border:`1px solid ${c.border}`,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 18px",background:c.bg,borderBottom:`1px solid ${c.border}`}}>
+            <span style={{width:9,height:9,borderRadius:"50%",background:c.dot,flexShrink:0}}/><span style={{fontSize:13,fontWeight:700,color:c.text,flex:1}}>{status}</span><span style={{fontSize:11.5,fontWeight:700,color:c.text,background:"rgba(255,255,255,.6)",borderRadius:20,padding:"1px 10px"}}>{items.length}</span>
+          </div>
+          <div style={{padding:"10px 18px",display:"flex",flexDirection:"column",gap:6}}>
+            {items.map(item=>(
+              <div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"#FAFAF9",borderRadius:8,border:"1px solid #EEEBE6"}}>
+                <span style={{fontSize:10.5,fontWeight:600,color:"#B0ABA5",background:"#F0EEE9",borderRadius:5,padding:"2px 8px"}}>{item.week}</span>
+                <div style={{flex:1}}><span style={{fontSize:13,fontWeight:600,color:"#1a1a2e"}}>{item.name||<span style={{color:"#C4BFBA",fontStyle:"italic"}}>Unnamed</span>}</span></div>
+                <span style={{fontSize:11,color:"#9CA3AF"}}>{item.clientName}</span>
+                <span style={{fontSize:10.5,fontWeight:600,color:"#9CA3AF",background:"#F0EEE9",borderRadius:5,padding:"2px 8px"}}>{item.designer}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );})}
+      </div>
+      {empty.length>0&&<div><div style={{fontSize:10,fontWeight:700,color:"#C4BFBA",letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:8}}>Empty stages</div><div style={{display:"flex",flexWrap:"wrap",gap:7}}>{empty.map(s=><span key={s} style={{display:"inline-flex",alignItems:"center",gap:5,background:"#F8F7F4",color:"#B0ABA5",border:"1px solid #E5E2DC",padding:"4px 12px",borderRadius:20,fontSize:11.5,fontWeight:600}}><span style={{width:6,height:6,borderRadius:"50%",background:SC[s].dot,opacity:.35}}/>{s}</span>)}</div></div>}
+    </div>
+  );
+}
+
+
+
+function EbDesignerView({clients}){
+  const counts = useMemo(()=>{
+    const m={};
+    DESIGNERS.forEach(d=>{ m[d]={total:0,urgent:0,deployed:0,byStatus:{}}; STATUSES.forEach(s=>m[d].byStatus[s]=0); });
+    clients.forEach(c=>c.eblasts.forEach(e=>{
+      if(!m[e.designer]) return;
+      m[e.designer].total++;
+      if(e.urgent) m[e.designer].urgent++;
+      if(e.status==="Deployed") m[e.designer].deployed++;
+      m[e.designer].byStatus[e.status]++;
+    }));
+    return m;
+  },[clients]);
+  const total = Object.values(counts).reduce((a,d)=>a+d.total,0);
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+        {DESIGNERS.map(d=>{
+          const dc=counts[d]; const pct=total?Math.round((dc.total/total)*100):0;
+          return (
+            <div key={d} style={{flex:"1 1 260px",background:"#fff",borderRadius:14,border:"1px solid #E5E2DC",padding:"18px 20px",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                <div style={{fontSize:17,fontWeight:800,color:"#1a1a2e",fontFamily:"'DM Serif Display',serif"}}>{d}</div>
+                <div style={{fontSize:24,fontWeight:800,color:"#6366F1",fontFamily:"'DM Serif Display',serif"}}>{dc.total}</div>
+              </div>
+              <div style={{height:6,background:"#F0EEE9",borderRadius:3,marginBottom:12,overflow:"hidden"}}>
+                <div style={{width:pct+"%",height:"100%",background:"#6366F1",borderRadius:3,transition:"width .3s"}}/>
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {[{l:"Deployed",v:dc.deployed,c:"#16A34A"},{l:"Urgent",v:dc.urgent,c:"#F43F5E"},{l:"In Progress",v:dc.total-dc.deployed,c:"#F59E0B"}].map(s=>(
+                  <div key={s.l} style={{flex:1,textAlign:"center",background:"#FAFAF9",borderRadius:8,padding:"7px 4px"}}>
+                    <div style={{fontSize:16,fontWeight:700,color:s.c}}>{s.v}</div>
+                    <div style={{fontSize:9.5,color:"#9CA3AF",fontWeight:600,marginTop:1,textTransform:"uppercase",letterSpacing:"0.06em"}}>{s.l}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{marginTop:14,display:"flex",flexDirection:"column",gap:4}}>
+                {STATUSES.filter(s=>dc.byStatus[s]>0).map(s=>{
+                  const sc=SC[s];
+                  return (
+                    <div key={s} style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{width:8,height:8,borderRadius:"50%",background:sc.dot,flexShrink:0}}/>
+                      <span style={{fontSize:11,color:"#6B7280",flex:1}}>{s}</span>
+                      <span style={{fontSize:11,fontWeight:700,color:sc.text,background:sc.bg,borderRadius:20,padding:"1px 8px"}}>{dc.byStatus[s]}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {total===0&&<div style={{textAlign:"center",padding:"40px",color:"#9CA3AF",fontFamily:"'DM Sans',sans-serif",fontSize:14}}>No eblasts yet this month.</div>}
+    </div>
+  );
+}
+
+// ── Undo Toast ─────────────────────────────────────────────────────────────
+function UndoToast({item, onUndo, onDismiss}) {
+  
+  const [,forceUpdate]=useState(0);
+  const startRef = useState(Date.now())[0];
+  const dur = 7000;
+  const elapsed = Date.now()-startRef;
+  const prog = Math.max(0,100-(elapsed/dur)*100);
+  useState(()=>{
+    const tick=setInterval(()=>{
+      forceUpdate(n=>n+1);
+      if(Date.now()-startRef>=dur){clearInterval(tick);onDismiss();}
+    },80);
+    return ()=>clearInterval(tick);
+  });
+  return (
+    <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:9999,background:"#1a1a2e",color:"#fff",borderRadius:12,padding:"12px 18px",display:"flex",alignItems:"center",gap:14,boxShadow:"0 8px 32px rgba(0,0,0,.25)",minWidth:300,fontFamily:"'DM Sans',sans-serif"}}>
+      <div style={{flex:1}}>
+        <div style={{fontSize:13,fontWeight:600}}>{item.clientName} removed</div>
+        <div style={{height:3,background:"rgba(255,255,255,.15)",borderRadius:2,marginTop:7,overflow:"hidden"}}>
+          <div style={{height:"100%",width:Math.max(0,100-((Date.now()-startRef)/dur)*100)+"%",background:"#6366F1",borderRadius:2,transition:"width 50ms linear"}}/>
+        </div>
+      </div>
+      <button onClick={onUndo} style={{background:"#6366F1",color:"#fff",border:"none",borderRadius:7,padding:"6px 14px",cursor:"pointer",fontSize:12.5,fontWeight:700,whiteSpace:"nowrap",flexShrink:0}}>↩ Undo</button>
+      <button onClick={onDismiss} style={{background:"none",border:"none",color:"rgba(255,255,255,.5)",cursor:"pointer",fontSize:16,padding:"0 2px",lineHeight:1}} onMouseEnter={e=>e.currentTarget.style.color="#fff"} onMouseLeave={e=>e.currentTarget.style.color="rgba(255,255,255,.5)"}>✕</button>
+    </div>
+  );
+}
+
+// ── Preset Picker ───────────────────────────────────────────────────────────
+function PresetPicker({presets, onSelect, onClose}) {
+  if (!presets.length) return null;
+  return (
+    <div style={{background:"#fff",border:"1.5px solid #6366F1",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+      <div style={{fontSize:10,fontWeight:800,color:"#6366F1",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:8}}>Restore a default client</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+        {presets.map(p=>(
+          <button key={p.id} onClick={()=>onSelect(p)}
+            style={{background:"#F0EEE9",border:"1px solid #E5E2DC",borderRadius:7,padding:"5px 12px",cursor:"pointer",fontSize:12.5,fontFamily:"'DM Sans',sans-serif",fontWeight:600,color:"#1a1a2e",display:"flex",alignItems:"center",gap:7,transition:"all .12s"}}
+            onMouseEnter={e=>{e.currentTarget.style.background="#1a1a2e";e.currentTarget.style.color="#fff";e.currentTarget.style.borderColor="#1a1a2e";}}
+            onMouseLeave={e=>{e.currentTarget.style.background="#F0EEE9";e.currentTarget.style.color="#1a1a2e";e.currentTarget.style.borderColor="#E5E2DC";}}>
+            {p.name}{p.scope&&<span style={{fontSize:10,fontWeight:700,opacity:.6}}>{p.scope}</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+function YearOverview({data, onClose}){
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={onClose}>
+      <div style={{background:"#fff",borderRadius:16,padding:"24px 28px",width:"100%",maxWidth:700,maxHeight:"85vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,.25)"}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+          <h2 style={{margin:0,fontSize:18,fontFamily:"'DM Serif Display',serif",color:"#1a1a2e"}}>Year Overview</h2>
+          <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#9CA3AF"}}>✕</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10}}>
+          {MONTHS.map((m,i)=>{
+            const mc=data[i]||[];
+            const tot=mc.reduce((a,c)=>a+c.eblasts.length,0);
+            const dep=mc.reduce((a,c)=>a+c.eblasts.filter(e=>e.status==="Deployed").length,0);
+            const urg=mc.reduce((a,c)=>a+c.eblasts.filter(e=>e.urgent).length,0);
+            const pct=tot?Math.round((dep/tot)*100):0;
+            const isCur=i===new Date().getMonth();
+            return (
+              <div key={m} style={{background:isCur?"#F5F3FF":"#FAFAF9",borderRadius:10,padding:"12px 14px",border:isCur?"1.5px solid #DDD6FE":"1px solid #E5E2DC"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                  <span style={{fontSize:12,fontWeight:800,color:isCur?"#7C3AED":"#1a1a2e"}}>{m}{isCur&&<span style={{marginLeft:5,fontSize:9,background:"#8B5CF6",color:"#fff",borderRadius:20,padding:"1px 6px"}}>NOW</span>}</span>
+                  {urg>0&&<span style={{fontSize:10}}>🚨{urg}</span>}
+                </div>
+                <div style={{fontSize:22,fontWeight:800,color:"#1a1a2e",fontFamily:"'DM Serif Display',serif"}}>{dep}<span style={{fontSize:13,fontWeight:500,color:"#9CA3AF"}}>/{tot}</span></div>
+                <div style={{fontSize:10,color:"#9CA3AF",marginBottom:6}}>deployed</div>
+                <div style={{height:4,background:"#E5E2DC",borderRadius:2,overflow:"hidden"}}>
+                  <div style={{width:pct+"%",height:"100%",background:pct===100?"#16A34A":"#8B5CF6",borderRadius:2}}/>
+                </div>
+                <div style={{fontSize:10,color:"#9CA3AF",marginTop:4}}>{pct}% complete</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EblastPipeline({data, setData}){
+  const [month,setMonth]=useState(new Date().getMonth());
+  const [view,setView]=useState(()=>{const v={};MONTHS.forEach((_,i)=>v[i]=1);return v;});
+  const [sorted,setSorted]=useState(false);
+  const [search,setSearch]=useState("");
+  const [showAdd,setShowAdd]=useState(false);
+  const [showYearOverview,setShowYearOverview]=useState(false);
+  const [newName,setNewName]=useState("");
+  const [newScope,setNewScope]=useState("");
+  const [undoItem,setUndoItem]=useState(null);
+  const raw=data[month]||[];
+  const cur=view[month]??1;
+
+  function upd(cid,d){setData({...data,[month]:data[month].map(c=>c.clientId===cid?d:c)});}
+  function rem(cid){
+    const client=raw.find(c=>c.clientId===cid);
+    setData({...data,[month]:data[month].filter(c=>c.clientId!==cid)});
+    setUndoItem({clientName:client.clientName, restoreFn:()=>setData({...data,[month]:[...data[month],client]})});
+  }
+  function add(){if(!newName.trim())return;setData({...data,[month]:[...data[month],{clientId:uid(),clientName:newName.trim(),scope:newScope.trim(),expanded:true,eblasts:[newEblast()]}]});setNewName("");setNewScope("");setShowAdd(false);}
+  function addPreset(p){setData({...data,[month]:[...data[month],{clientId:uid(),clientName:p.name,scope:p.scope,expanded:true,eblasts:[newEblast()]}]});}
+
+  const currentNames=new Set(raw.map(c=>c.clientName));
+  const availablePresets=EB_DEFAULTS.filter(d=>!currentNames.has(d.name));
+  const tot=raw.reduce((a,c)=>a+c.eblasts.length,0);
+  const dep=raw.reduce((a,c)=>a+c.eblasts.filter(e=>e.status==="Deployed").length,0);
+  const urgTotal=raw.reduce((a,c)=>a+c.eblasts.filter(e=>e.urgent).length,0);
+
+  // Sort: urgent clients first, then alpha if sorted
+  let displayClients=[...raw];
+  if(sorted) displayClients.sort((a,b)=>a.clientName.localeCompare(b.clientName));
+  else displayClients.sort((a,b)=>(b.eblasts.some(e=>e.urgent)?1:0)-(a.eblasts.some(e=>e.urgent)?1:0));
+  if(search.trim()) displayClients=displayClients.filter(c=>c.clientName.toLowerCase().includes(search.toLowerCase())||c.eblasts.some(e=>e.name.toLowerCase().includes(search.toLowerCase())));
+
+  return (
+    <div style={{display:"flex",height:"100%",minHeight:0,overflow:"hidden"}}>
+      <MonthSidebar months={MONTHS} active={month} setActive={setMonth} getData={i=>{const mc=data[i]||[];return{top:mc.reduce((a,c)=>a+c.eblasts.filter(e=>e.status==="Deployed").length,0),bot:mc.reduce((a,c)=>a+c.eblasts.length,0)};}}/>
+      <div style={{flex:1,overflowY:"auto",padding:"20px 24px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,flexWrap:"wrap",gap:10}}>
+          <div>
+            <h2 style={{margin:0,fontSize:21,fontFamily:"'DM Serif Display',serif",color:"#1a1a2e"}}>{MONTHS[month]}</h2>
+            <p style={{margin:"3px 0 0",fontSize:12,color:"#9CA3AF"}}>{raw.length} clients · {tot} eblasts · {dep} deployed{urgTotal>0&&<span style={{marginLeft:8,color:"#BE123C",fontWeight:600}}>· 🚨 {urgTotal} urgent</span>}</p>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <SearchBar value={search} onChange={setSearch} placeholder="Search clients or eblasts…"/>
+            <AZBtn sorted={sorted} onToggle={()=>setSorted(v=>!v)}/>
+            <button onClick={()=>setShowYearOverview(true)} style={{background:"#F0EEE9",border:"none",borderRadius:7,padding:"7px 13px",cursor:"pointer",fontSize:12,fontWeight:600,color:"#6B6860"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a2e";e.currentTarget.style.color="#fff";}} onMouseLeave={e=>{e.currentTarget.style.background="#F0EEE9";e.currentTarget.style.color="#6B6860";}}>📊 Year</button>
+            {cur===0&&<button onClick={()=>setShowAdd(v=>!v)} style={{background:"#1a1a2e",color:"#fff",border:"none",padding:"8px 15px",borderRadius:8,cursor:"pointer",fontSize:12.5,fontWeight:600,display:"flex",alignItems:"center",gap:5}}><span style={{fontSize:14}}>+</span> Add Client</button>}
+          </div>
+        </div>
+        <div style={{marginBottom:18}}><SubTabs options={["Client Breakdown","Status Breakdown","Designer View"]} active={cur} onChange={v=>setView(p=>({...p,[month]:v}))}/></div>
+        {showAdd&&cur===0&&(
+          <div style={{background:"#fff",border:"1.5px solid #6366F1",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
+            <PresetPicker presets={availablePresets} onSelect={p=>{addPreset(p);setShowAdd(false);}} onClose={()=>setShowAdd(false)}/>
+            <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+              <div style={{flex:"1 1 150px"}}><label style={{display:"block",fontSize:9.5,fontWeight:700,color:"#9CA3AF",letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:4}}>New Client Name</label><input autoFocus value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="e.g. Jane Smith" style={{width:"100%",border:"1.5px solid #E5E2DC",borderRadius:7,padding:"6px 10px",fontSize:13,color:"#1a1a2e",outline:"none",boxSizing:"border-box"}}/></div>
+              <div style={{flex:"1 1 130px"}}><label style={{display:"block",fontSize:9.5,fontWeight:700,color:"#9CA3AF",letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:4}}>Scope</label><input value={newScope} onChange={e=>setNewScope(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="e.g. 4 Eblasts/MO" style={{width:"100%",border:"1.5px solid #E5E2DC",borderRadius:7,padding:"6px 10px",fontSize:13,color:"#1a1a2e",outline:"none",boxSizing:"border-box"}}/></div>
+              <div style={{display:"flex",gap:7}}><button onClick={add} style={{background:"#1a1a2e",color:"#fff",border:"none",padding:"7px 15px",borderRadius:7,cursor:"pointer",fontSize:12.5,fontWeight:700}}>Add</button><button onClick={()=>setShowAdd(false)} style={{background:"#F3F4F6",color:"#6B7280",border:"none",padding:"7px 13px",borderRadius:7,cursor:"pointer",fontSize:12.5,fontWeight:600}}>Cancel</button></div>
+            </div>
+          </div>
+        )}
+        {cur===0&&<div style={{display:"flex",flexDirection:"column",gap:9}}>{displayClients.map(c=><EbClientCard key={c.clientId} client={c} onUpdate={d=>upd(c.clientId,d)} onRemove={()=>rem(c.clientId)}/>)}{displayClients.length===0&&<EmptyMsg msg={search?`No results for "${search}".`:`No clients for ${MONTHS[month]}.`} onAdd={search?undefined:()=>setShowAdd(true)}/>}</div>}
+        {cur===1&&<EbStatusBreakdown clients={raw}/>}
+        {cur===2&&<EbDesignerView clients={raw}/>}
+      </div>
+      {undoItem&&<UndoToast item={undoItem} onUndo={()=>{undoItem.restoreFn();setUndoItem(null);}} onDismiss={()=>setUndoItem(null)}/>}
+      {showYearOverview&&<YearOverview data={data} onClose={()=>setShowYearOverview(false)}/>}
+    </div>
+  );
+}
+
+// ── Social Media ───────────────────────────────────────────────────────────
+function DateRangePicker({startDate, endDate, onUpdate, openId, batchId, setOpenId}){
+  const isOpen = openId === batchId;
+  const [hover, setHover] = useState(null);
+  const [pos, setPos] = useState({top:0,left:0});
+  const btnRef = useState(null);
+  const [calMonth, setCalMonth] = useState(()=>{
+    if(startDate){ const p=startDate.split("/"); if(p.length===2){ const m=parseInt(p[0])-1,d=parseInt(p[1]); if(!isNaN(m)&&!isNaN(d)) return new Date(2026,m,1); } }
+    return new Date(2026, new Date().getMonth(), 1);
+  });
+
+  function parseDate(s){ if(!s) return null; const p=s.split("/"); if(p.length!==2) return null; const m=parseInt(p[0])-1,d=parseInt(p[1]); if(isNaN(m)||isNaN(d)) return null; return new Date(2026,m,d); }
+  function fmtD(d){ if(!d) return null; return `${d.getMonth()+1}/${String(d.getDate()).padStart(2,"0")}`; }
+  function sameDay(a,b){ return a&&b&&a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); }
+  function inRange(d,s,e){ return d&&s&&e&&d>s&&d<e; }
+
+  const start = parseDate(startDate), end = parseDate(endDate);
+
+  function openCal(e){
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPos({top: rect.bottom + 6, left: rect.left});
+    setOpenId(isOpen ? null : batchId);
+  }
+
+  function pickDay(d){
+    if(!start||(start&&end)){
+      onUpdate({startDate:fmtD(d),endDate:""});
+    } else {
+      if(d<start){ onUpdate({startDate:fmtD(d),endDate:fmtD(start)}); }
+      else { onUpdate({startDate:startDate,endDate:fmtD(d)}); }
+      setOpenId(null);
+    }
+  }
+
+  function calDays(){
+    const yr=calMonth.getFullYear(),mo=calMonth.getMonth();
+    const first=new Date(yr,mo,1).getDay(),last=new Date(yr,mo+1,0).getDate();
+    const days=[];
+    for(let i=0;i<first;i++) days.push(null);
+    for(let i=1;i<=last;i++) days.push(new Date(yr,mo,i));
+    return days;
+  }
+
+  const hoverEnd = hover && start && !end ? hover : end;
+  const label = startDate && endDate ? `${startDate} – ${endDate}` : startDate ? `${startDate} → …` : "Select dates";
+  const hasRange = startDate||endDate;
+
+  return (
+    <div onClick={e=>e.stopPropagation()}>
+      <div style={{display:"flex",alignItems:"center",gap:4}}>
+        <button onClick={openCal}
+          style={{display:"flex",alignItems:"center",gap:6,border:`1.5px solid ${isOpen?"#6366F1":"#E5E2DC"}`,borderRadius:7,padding:"3px 9px",background:isOpen?"#EEF2FF":hasRange?"#F8F7FF":"#FAFAF9",cursor:"pointer",fontSize:11,fontWeight:hasRange?600:400,color:hasRange?"#4338CA":"#9CA3AF",fontFamily:"'DM Sans',sans-serif",whiteSpace:"nowrap"}}>
+          <span style={{fontSize:12}}>📅</span>{label}
+        </button>
+        {hasRange&&<button onClick={()=>onUpdate({startDate:"",endDate:""})} style={{background:"none",border:"none",cursor:"pointer",color:"#D1D5DB",fontSize:12,padding:"1px 3px",lineHeight:1}} onMouseEnter={e=>e.currentTarget.style.color="#F43F5E"} onMouseLeave={e=>e.currentTarget.style.color="#D1D5DB"}>✕</button>}
+      </div>
+      {isOpen&&(
+        <div onClick={e=>e.stopPropagation()} style={{position:"fixed",top:pos.top,left:pos.left,zIndex:9999,background:"#fff",borderRadius:12,border:"1px solid #E5E2DC",boxShadow:"0 8px 32px rgba(0,0,0,.18)",padding:"14px 16px",width:272,fontFamily:"'DM Sans',sans-serif"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+            <button onClick={()=>setCalMonth(d=>new Date(d.getFullYear(),d.getMonth()-1,1))} style={{background:"none",border:"none",cursor:"pointer",fontSize:15,color:"#6B7280",padding:"2px 6px"}}>‹</button>
+            <span style={{fontSize:12.5,fontWeight:700,color:"#1a1a2e"}}>{calMonth.toLocaleDateString("en-US",{month:"long",year:"numeric"})}</span>
+            <button onClick={()=>setCalMonth(d=>new Date(d.getFullYear(),d.getMonth()+1,1))} style={{background:"none",border:"none",cursor:"pointer",fontSize:15,color:"#6B7280",padding:"2px 6px"}}>›</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1,marginBottom:4}}>
+            {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d=><div key={d} style={{textAlign:"center",fontSize:9.5,fontWeight:700,color:"#9CA3AF",padding:"2px 0"}}>{d}</div>)}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1}}>
+            {calDays().map((d,i)=>{
+              if(!d) return <div key={"e"+i}/>;
+              const isStart=sameDay(d,start), isEnd=sameDay(d,end||hoverEnd);
+              const inR=inRange(d,start,end||hoverEnd);
+              const isPost=[1,3,5].includes(d.getDay());
+              return (
+                <button key={i} onClick={()=>pickDay(d)} onMouseEnter={()=>setHover(d)} onMouseLeave={()=>setHover(null)}
+                  style={{textAlign:"center",padding:"5px 2px",border:"none",cursor:"pointer",fontSize:12,fontWeight:isStart||isEnd?800:isPost?600:400,
+                    background:isStart||isEnd?"#4338CA":inR?"#EEF2FF":"transparent",
+                    color:isStart||isEnd?"#fff":inR?"#4338CA":isPost?"#6366F1":"#374151",
+                    borderRadius:isStart?"6px 0 0 6px":isEnd?"0 6px 6px 0":inR?"0":"6px",
+                  }}>
+                  {d.getDate()}
+                </button>
+              );
+            })}
+          </div>
+          {start&&!end&&<div style={{marginTop:10,fontSize:10.5,color:"#9CA3AF",textAlign:"center"}}>Now pick an end date</div>}
+          {start&&end&&<div style={{marginTop:10,fontSize:10.5,fontWeight:600,color:"#4338CA",textAlign:"center"}}>📅 {startDate} – {endDate}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SmPostRow({post,onUpdate,onRemove}){
+  const c=SSC[post.status];
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:8,background:post.urgent?"#FFF1F2":"#fff",borderRadius:7,padding:"7px 10px",border:post.urgent?"1.5px solid #FECDD3":"1px solid #E5E2DC",flexWrap:"wrap"}}>
+      <input value={post.name} onChange={e=>onUpdate(post.id,"name",e.target.value)} placeholder="Post caption / description..." style={{flex:"1 1 160px",border:"1.5px solid #E5E2DC",borderRadius:7,padding:"4px 8px",fontSize:12,fontFamily:"'DM Sans',sans-serif",color:"#1a1a2e",background:"#FAFAF9",outline:"none",boxSizing:"border-box"}}/>
+      <div style={{flex:"0 0 180px",position:"relative"}}>
+        <select value={post.status} onChange={e=>onUpdate(post.id,"status",e.target.value)} style={{width:"100%",border:"1.5px solid #E5E2DC",borderRadius:7,padding:"4px 22px 4px 8px",fontSize:11,fontFamily:"'DM Sans',sans-serif",fontWeight:600,color:c?.text,background:c?.bg,outline:"none",cursor:"pointer",appearance:"none",boxSizing:"border-box"}}>
+          {SM_STATUSES.map(s=><option key={s}>{s}</option>)}
+        </select>
+        <span style={{position:"absolute",right:7,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",fontSize:8,color:"#9CA3AF"}}>▾</span>
+      </div>
+      <button onClick={()=>onUpdate(post.id,"needsDesign",!post.needsDesign)} style={{border:post.needsDesign?"1.5px solid #8B5CF6":"1.5px solid #E5E2DC",borderRadius:6,padding:"3px 8px",fontSize:11,fontWeight:700,cursor:"pointer",background:post.needsDesign?"#F5F3FF":"#FAFAF9",color:post.needsDesign?"#7C3AED":"#9CA3AF"}}>🎨</button>
+      <button onClick={()=>onUpdate(post.id,"urgent",!post.urgent)} title={post.urgent?"Remove urgent":"Mark urgent"} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,padding:"2px 3px",lineHeight:1,opacity:post.urgent?1:0.3}} onMouseEnter={e=>e.currentTarget.style.opacity="1"} onMouseLeave={e=>e.currentTarget.style.opacity=post.urgent?"1":"0.3"}>🚨</button>
+      <button onClick={()=>onRemove(post.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#D1D5DB",fontSize:13,padding:"2px 3px",lineHeight:1}} onMouseEnter={e=>e.currentTarget.style.color="#F43F5E"} onMouseLeave={e=>e.currentTarget.style.color="#D1D5DB"}>✕</button>
+    </div>
+  );
+}
+
+function SmBatchRow({batch,onUpdate,openCalId,setOpenCalId}){
+  const c=SSC[batch.status];
+  function addPost(){onUpdate({...batch,posts:[...batch.posts,newSmPost()]});}
+  function remPost(pid){onUpdate({...batch,posts:batch.posts.filter(p=>p.id!==pid)});}
+  function updPost(pid,f,v){onUpdate({...batch,posts:batch.posts.map(p=>p.id===pid?{...p,[f]:v}:p)});}
+  return (
+    <div style={{background:"#FAFAF9",borderRadius:10,border:"1px solid #EEEBE6",overflow:"hidden",marginBottom:6}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"9px 14px",background:c?.bg||"#F8F7F4",borderBottom:batch.posts.length>0?`1px solid ${c?.border||"#E5E2DC"}`:"none",flexWrap:"wrap"}}>
+        <span style={{fontSize:11,fontWeight:800,color:"#1a1a2e",minWidth:50}}>{batch.week}</span>
+        <DateRangePicker startDate={batch.startDate} endDate={batch.endDate} onUpdate={obj=>onUpdate({...batch,...obj})} openId={openCalId} batchId={batch.id} setOpenId={setOpenCalId}/>
+        <div style={{flex:"0 0 182px",position:"relative"}}>
+          <select value={batch.status} onChange={e=>onUpdate({...batch,status:e.target.value})} style={{width:"100%",border:"1.5px solid #E5E2DC",borderRadius:7,padding:"4px 22px 4px 8px",fontSize:11,fontFamily:"'DM Sans',sans-serif",fontWeight:600,color:c?.text,background:c?.bg,outline:"none",cursor:"pointer",appearance:"none",boxSizing:"border-box"}}>
+            {SM_STATUSES.map(s=><option key={s}>{s}</option>)}
+          </select>
+          <span style={{position:"absolute",right:7,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",fontSize:8,color:"#9CA3AF"}}>▾</span>
+        </div>
+        <span style={{fontSize:11,color:"#9CA3AF",flex:1}}>{batch.posts.length} post{batch.posts.length!==1?"s":""}</span>
+        <button onClick={addPost} style={{background:"rgba(255,255,255,.7)",border:"none",borderRadius:6,padding:"3px 9px",fontSize:11,fontWeight:700,color:"#6B6860",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a2e";e.currentTarget.style.color="#fff";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,.7)";e.currentTarget.style.color="#6B6860";}}>+ Post</button>
+      </div>
+      {batch.posts.length>0&&<div style={{padding:"8px 14px",display:"flex",flexDirection:"column",gap:5}}>{batch.posts.map(p=><SmPostRow key={p.id} post={p} onUpdate={updPost} onRemove={remPost}/>)}</div>}
+    </div>
+  );
+}
+
+function SmClientCard({client,onUpdate,onRemove,openCalId,setOpenCalId}){
+  function updBatch(bid,d){onUpdate({...client,batches:client.batches.map(b=>b.id===bid?d:b)});}
+  function addWeek(){
+    if(client.batches.length>=5) return;
+    const nextNum=client.batches.length+1;
+    const label="Week "+nextNum;
+    onUpdate({...client,batches:[...client.batches,newSmBatch(label)],expanded:true});
+  }
+  function remWeek(){
+    if(client.batches.length<=1) return;
+    onUpdate({...client,batches:client.batches.slice(0,-1)});
+  }
+  const tot=client.batches.reduce((a,b)=>a+b.posts.length,0);
+  const des=client.batches.reduce((a,b)=>a+b.posts.filter(p=>p.needsDesign).length,0);
+  const canAdd=client.batches.length<5;
+  const canRem=client.batches.length>1;
+  return (
+    <div style={{background:"#fff",borderRadius:12,border:"1px solid #E5E2DC",boxShadow:"0 1px 4px rgba(0,0,0,.04)",overflow:"hidden"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"13px 16px",cursor:"pointer",userSelect:"none"}} onClick={()=>onUpdate({...client,expanded:!client.expanded})}>
+        <span style={{fontSize:10,color:"#9CA3AF",transform:client.expanded?"rotate(90deg)":"rotate(0)",transition:"transform .2s",flexShrink:0,width:12}}>▶</span>
+        <div style={{flex:1,minWidth:0}}><span style={{fontSize:13.5,fontWeight:700,color:"#1a1a2e",fontFamily:"'DM Sans',sans-serif"}}>{client.clientName}</span>{client.note&&<span style={{marginLeft:8,fontSize:11,color:"#9CA3AF",fontStyle:"italic"}}>{client.note}</span>}</div>
+        <span style={{fontSize:11,color:"#9CA3AF",whiteSpace:"nowrap"}}>{client.batches.length} wk · {tot} posts</span>
+        {des>0&&<span style={{fontSize:10.5,fontWeight:700,color:"#7C3AED",background:"#F5F3FF",border:"1px solid #DDD6FE",borderRadius:20,padding:"1px 8px"}}>🎨 {des}</span>}
+        <div style={{display:"flex",alignItems:"center",gap:4}} onClick={e=>e.stopPropagation()}>
+          <button onClick={remWeek} disabled={!canRem} title="Remove last week"
+            style={{width:24,height:24,borderRadius:6,border:"1.5px solid #E5E2DC",background:canRem?"#F0EEE9":"#F8F7F4",color:canRem?"#6B6860":"#D1D5DB",cursor:canRem?"pointer":"not-allowed",fontSize:14,fontWeight:700,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}
+            onMouseEnter={e=>{if(canRem){e.currentTarget.style.background="#1a1a2e";e.currentTarget.style.color="#fff";}}}
+            onMouseLeave={e=>{if(canRem){e.currentTarget.style.background="#F0EEE9";e.currentTarget.style.color="#6B6860";}}}>−</button>
+          <span style={{fontSize:11,fontWeight:700,color:"#9CA3AF",minWidth:14,textAlign:"center"}}>{client.batches.length}</span>
+          <button onClick={addWeek} disabled={!canAdd} title="Add week"
+            style={{width:24,height:24,borderRadius:6,border:"1.5px solid #E5E2DC",background:canAdd?"#F0EEE9":"#F8F7F4",color:canAdd?"#6B6860":"#D1D5DB",cursor:canAdd?"pointer":"not-allowed",fontSize:14,fontWeight:700,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}
+            onMouseEnter={e=>{if(canAdd){e.currentTarget.style.background="#1a1a2e";e.currentTarget.style.color="#fff";}}}
+            onMouseLeave={e=>{if(canAdd){e.currentTarget.style.background="#F0EEE9";e.currentTarget.style.color="#6B6860";}}}>+</button>
+        </div>
+        <button onClick={e=>{e.stopPropagation();onRemove();}} style={{background:"none",border:"none",cursor:"pointer",color:"#D1D5DB",fontSize:15,padding:"2px 3px",lineHeight:1}} onMouseEnter={e=>e.currentTarget.style.color="#F43F5E"} onMouseLeave={e=>e.currentTarget.style.color="#D1D5DB"}>✕</button>
+      </div>
+      {(client.showNote||client.clientNote)&&<div style={{padding:"0 16px 8px"}}><textarea value={client.clientNote||""} onChange={e=>onUpdate({...client,clientNote:e.target.value})} placeholder="Client note... (e.g. on vacation March 10)" rows={2} style={{width:"100%",border:"1.5px solid #FDE68A",borderRadius:7,padding:"6px 10px",fontSize:12,fontFamily:"'DM Sans',sans-serif",color:"#92400E",background:"#FFFBEB",outline:"none",resize:"vertical",boxSizing:"border-box"}}/></div>}
+      {client.expanded&&<div style={{padding:"0 16px 14px"}}>{client.batches.map(b=><SmBatchRow key={b.id} batch={b} onUpdate={d=>updBatch(b.id,d)} openCalId={openCalId} setOpenCalId={setOpenCalId}/>)}</div>}
+    </div>
+  );
+}
+
+function SmSection({title,accent,list,onUpdate,onRemove,openCalId,setOpenCalId}){
+  return (
+    <div style={{marginBottom:24}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+        <div style={{width:3,height:20,borderRadius:2,background:accent}}/>
+        <h3 style={{margin:0,fontSize:13,fontWeight:800,color:"#1a1a2e",letterSpacing:"0.08em",textTransform:"uppercase"}}>{title}</h3>
+        <span style={{fontSize:11,fontWeight:700,color:accent,background:accent+"18",borderRadius:20,padding:"2px 10px"}}>{list.length}</span>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>{list.map(c=><SmClientCard key={c.clientId} client={c} onUpdate={onUpdate} onRemove={()=>onRemove(c.clientId)} openCalId={openCalId} setOpenCalId={setOpenCalId}/>)}</div>
+    </div>
+  );
+}
+
+function SmClientTypes({clients,onUpdate,onRemove,sorted,openCalId,setOpenCalId}){
+  const srt=arr=>sorted?[...arr].sort((a,b)=>a.clientName.localeCompare(b.clientName)):arr;
+  return <div><SmSection title="Agents" accent="#6366F1" list={srt(clients.filter(c=>c.type==="agent"))} onUpdate={onUpdate} onRemove={onRemove} openCalId={openCalId} setOpenCalId={setOpenCalId}/><SmSection title="Developers" accent="#F97316" list={srt(clients.filter(c=>c.type==="dev"))} onUpdate={onUpdate} onRemove={onRemove} openCalId={openCalId} setOpenCalId={setOpenCalId}/></div>;
+}
+
+function SmBatchCard({item}){
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"#FAFAF9",borderRadius:8,border:"1px solid #EEEBE6",flexWrap:"wrap"}}>
+      <span style={{fontSize:10.5,fontWeight:700,color:"#B0ABA5",background:"#F0EEE9",borderRadius:5,padding:"2px 8px",whiteSpace:"nowrap"}}>{item.week}</span>
+      {item.range&&<span style={{fontSize:10.5,color:"#9CA3AF",whiteSpace:"nowrap"}}>{item.range}</span>}
+      {item.postCount>0&&<div style={{flex:1,minWidth:80}}><span style={{fontSize:12.5,fontWeight:600,color:"#1a1a2e"}}>{item.postCount} post{item.postCount!==1?"s":""}</span></div>}
+      {item.postCount===0&&<div style={{flex:1}}/>}
+      <span style={{fontSize:11,color:"#9CA3AF",whiteSpace:"nowrap"}}>{item.clientName}</span>
+    </div>
+  );
+}
+
+function SmPostCard({item}){
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:"#FAFAF9",borderRadius:8,border:"1px solid #EEEBE6",flexWrap:"wrap"}}>
+      <span style={{fontSize:10.5,fontWeight:700,color:"#B0ABA5",background:"#F0EEE9",borderRadius:5,padding:"2px 8px",whiteSpace:"nowrap"}}>{item.week}</span>
+      {item.range&&<span style={{fontSize:10.5,color:"#9CA3AF",whiteSpace:"nowrap"}}>{item.range}</span>}
+      <div style={{flex:1,minWidth:80}}><span style={{fontSize:13,fontWeight:600,color:"#1a1a2e"}}>{item.name||<span style={{color:"#C4BFBA",fontStyle:"italic"}}>Unnamed post</span>}</span></div>
+      <span style={{fontSize:11,color:"#9CA3AF",whiteSpace:"nowrap"}}>{item.clientName}</span>
+      {item.needsDesign&&<span style={{fontSize:11}}>🎨</span>}
+    </div>
+  );
+}
+
+function SmStatusBreakdown({clients}){
+  const {bByStatus,pByStatus,designPosts}=useMemo(()=>{
+    const bs={},ps={};
+    SM_STATUSES.forEach(s=>{bs[s]=[];ps[s]=[];});
+    const des=[];
+    clients.forEach(c=>{
+      c.batches.forEach(b=>{
+        const range=fmtRange(b.startDate,b.endDate);
+        bs[b.status]?.push({id:b.id,week:b.week,range,clientName:c.clientName,postCount:b.posts.length,hasPosts:b.posts.length>0});
+        b.posts.forEach(p=>{
+          const item={id:p.id,name:p.name,status:p.status,clientName:c.clientName,week:b.week,range,needsDesign:p.needsDesign};
+          ps[p.status]?.push(item);
+          if(p.needsDesign) des.push(item);
+        });
+      });
+    });
+    return {bByStatus:bs,pByStatus:ps,designPosts:des};
+  },[clients]);
+
+  const totB=clients.reduce((a,c)=>a+c.batches.length,0);
+  const totP=clients.reduce((a,c)=>a+c.batches.reduce((b,bt)=>b+bt.posts.length,0),0);
+  const pieData=SM_STATUSES.map(s=>({name:s,value:bByStatus[s].length})).filter(d=>d.value>0);
+  const actB=SM_STATUSES.filter(s=>bByStatus[s].length>0);
+  const empB=SM_STATUSES.filter(s=>bByStatus[s].length===0);
+  const actP=SM_STATUSES.filter(s=>pByStatus[s].length>0);
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      {pieData.length>0&&(
+        <div style={{background:"#fff",borderRadius:14,border:"1px solid #E5E2DC",padding:"18px 20px",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
+          <div style={{fontSize:11,fontWeight:800,color:"#1a1a2e",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:2}}>Week Batch Status Distribution</div>
+          <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>{totB} batches · {totP} posts</div>
+          <ResponsiveContainer width="100%" height={230}><PieChart><Pie data={pieData} cx="50%" cy="50%" outerRadius={88} dataKey="value" labelLine={false} label={<PieLabel/>}>{pieData.map((d,i)=><Cell key={i} fill={SSC[d.name]?.pie||"#9CA3AF"}/>)}</Pie><Tooltip content={<TTip/>}/><Legend iconType="circle" iconSize={8} formatter={v=><span style={{fontSize:11,color:"#374151"}}>{v}</span>} wrapperStyle={{paddingTop:10}}/></PieChart></ResponsiveContainer>
+        </div>
+      )}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      {actB.map(s=>{const c=SSC[s],items=bByStatus[s];return(
+        <div key={s} style={{background:"#fff",borderRadius:12,border:`1px solid ${c.border}`,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 18px",background:c.bg,borderBottom:`1px solid ${c.border}`}}>
+            <span style={{width:9,height:9,borderRadius:"50%",background:c.dot,flexShrink:0}}/><span style={{fontSize:13,fontWeight:700,color:c.text,flex:1}}>{s}</span><span style={{fontSize:11.5,fontWeight:700,color:c.text,background:"rgba(255,255,255,.6)",borderRadius:20,padding:"1px 10px"}}>{items.length} week{items.length!==1?"s":""}</span>
+          </div>
+          <div style={{padding:"10px 18px",display:"flex",flexDirection:"column",gap:6}}>{items.map(item=><SmBatchCard key={item.id} item={item}/>)}</div>
+        </div>
+      );})}
+      </div>
+      {empB.length>0&&<div><div style={{fontSize:10,fontWeight:700,color:"#C4BFBA",letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:8}}>Empty stages</div><div style={{display:"flex",flexWrap:"wrap",gap:7}}>{empB.map(s=><span key={s} style={{display:"inline-flex",alignItems:"center",gap:5,background:"#F8F7F4",color:"#B0ABA5",border:"1px solid #E5E2DC",padding:"4px 12px",borderRadius:20,fontSize:11.5,fontWeight:600}}><span style={{width:6,height:6,borderRadius:"50%",background:SSC[s].dot,opacity:.35}}/>{s}</span>)}</div></div>}
+      {totP>0&&<div style={{display:"flex",alignItems:"center",gap:12,margin:"4px 0"}}><div style={{flex:1,height:1,background:"#E5E2DC"}}/><span style={{fontSize:11,fontWeight:700,color:"#9CA3AF",letterSpacing:"0.07em",textTransform:"uppercase",whiteSpace:"nowrap"}}>Individual Posts</span><div style={{flex:1,height:1,background:"#E5E2DC"}}/></div>}
+      {designPosts.length>0&&(
+        <div style={{background:"#fff",borderRadius:12,border:"1.5px solid #DDD6FE",overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 18px",background:"#F5F3FF",borderBottom:"1px solid #DDD6FE"}}>
+            <span style={{fontSize:15}}>🎨</span><span style={{fontSize:13,fontWeight:700,color:"#7C3AED",flex:1}}>Individual Design Requests</span><span style={{fontSize:11.5,fontWeight:700,color:"#7C3AED",background:"rgba(255,255,255,.6)",borderRadius:20,padding:"1px 10px"}}>{designPosts.length}</span>
+          </div>
+          <div style={{padding:"10px 18px",display:"flex",flexDirection:"column",gap:6}}>{designPosts.map(item=><SmPostCard key={item.id} item={item}/>)}</div>
+        </div>
+      )}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      {actP.map(s=>{const c=SSC[s],items=pByStatus[s];return(
+        <div key={"p"+s} style={{background:"#fff",borderRadius:12,border:`1px solid ${c.border}`,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 18px",background:c.bg,borderBottom:`1px solid ${c.border}`}}>
+            <span style={{width:9,height:9,borderRadius:"50%",background:c.dot,flexShrink:0}}/><span style={{fontSize:13,fontWeight:700,color:c.text,flex:1}}>{s} <span style={{fontWeight:400,opacity:.6,fontSize:11}}>(posts)</span></span><span style={{fontSize:11.5,fontWeight:700,color:c.text,background:"rgba(255,255,255,.6)",borderRadius:20,padding:"1px 10px"}}>{items.length}</span>
+          </div>
+          <div style={{padding:"10px 18px",display:"flex",flexDirection:"column",gap:6}}>{items.map(item=><SmPostCard key={item.id} item={item}/>)}</div>
+        </div>
+      );})}
+      </div>
+    </div>
+  );
+}
+
+function SmNewClientForm({onAdd, onCancel}){
+  const [name,setName]=useState("");
+  const [type,setType]=useState("agent");
+  function submit(){if(!name.trim())return;onAdd(name.trim(),type);}
+  return (
+    <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap",borderTop:"1px solid #F0EEE9",paddingTop:12}}>
+      <div style={{flex:"1 1 150px"}}><label style={{display:"block",fontSize:9.5,fontWeight:700,color:"#9CA3AF",letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:4}}>New Client Name</label><input autoFocus value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()} placeholder="e.g. New Client" style={{width:"100%",border:"1.5px solid #E5E2DC",borderRadius:7,padding:"6px 10px",fontSize:13,color:"#1a1a2e",outline:"none",boxSizing:"border-box"}}/></div>
+      <div style={{flex:"0 0 120px"}}><label style={{display:"block",fontSize:9.5,fontWeight:700,color:"#9CA3AF",letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:4}}>Type</label>
+        <div style={{position:"relative"}}><select value={type} onChange={e=>setType(e.target.value)} style={{width:"100%",border:"1.5px solid #E5E2DC",borderRadius:7,padding:"6px 22px 6px 10px",fontSize:13,color:"#1a1a2e",background:"#fff",outline:"none",cursor:"pointer",appearance:"none",boxSizing:"border-box"}}><option value="agent">Agent</option><option value="dev">Developer</option></select><span style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",fontSize:8,color:"#9CA3AF"}}>▾</span></div>
+      </div>
+      <div style={{display:"flex",gap:7}}><button onClick={submit} style={{background:"#1a1a2e",color:"#fff",border:"none",padding:"7px 15px",borderRadius:7,cursor:"pointer",fontSize:12.5,fontWeight:700}}>Add</button><button onClick={onCancel} style={{background:"#F3F4F6",color:"#6B7280",border:"none",padding:"7px 13px",borderRadius:7,cursor:"pointer",fontSize:12.5,fontWeight:600}}>Cancel</button></div>
+    </div>
+  );
+}
+
+function SocialMediaTab({data, setData}){
+  const [month,setMonth]=useState(new Date().getMonth());
+  const [view,setView]=useState(1);
+  const [sorted,setSorted]=useState(false);
+  const [showAdd,setShowAdd]=useState(false);
+  const [undoItem,setUndoItem]=useState(null);
+  const [openCalId,setOpenCalId]=useState(null);
+  const [search,setSearch]=useState("");
+  const clients=data[month]||[];
+
+  function upd(d){setData({...data,[month]:data[month].map(c=>c.clientId===d.clientId?d:c)});}
+  function rem(cid){
+    const client=clients.find(c=>c.clientId===cid);
+    setData({...data,[month]:data[month].filter(c=>c.clientId!==cid)});
+    setUndoItem({clientName:client.clientName, restoreFn:()=>setData({...data,[month]:[...data[month],client]})});
+  }
+  function addPreset(preset){
+    setData({...data,[month]:[...data[month],{clientId:uid(),clientName:preset.name,note:preset.note||"",type:preset.type,expanded:true,batches:WEEKS.map(w=>newSmBatch(w))}]});
+    setShowAdd(false);
+  }
+
+  const currentNames=new Set(clients.map(c=>c.clientName));
+  const allPresets=[...SM_AGENTS.map(a=>({...a,type:"agent"})),...SM_DEVS.map(d=>({...d,type:"dev"}))];
+  const availablePresets=allPresets.filter(p=>!currentNames.has(p.name));
+
+  const totP=clients.reduce((a,c)=>a+c.batches.reduce((b,bt)=>b+bt.posts.length,0),0);
+  const urgSm=clients.reduce((a,c)=>a+c.batches.reduce((b,bt)=>b+bt.posts.filter(p=>p.urgent).length,0),0);
+  const dispClients=search.trim()?clients.filter(c=>c.clientName.toLowerCase().includes(search.toLowerCase())):clients;
+  return (
+    <div style={{display:"flex",height:"100%",minHeight:0,overflow:"hidden"}}>
+      <MonthSidebar months={MONTHS} active={month} setActive={setMonth} getData={i=>{const mc=data[i]||[];const tot=mc.reduce((a,c)=>a+c.batches.reduce((b,bt)=>b+bt.posts.length,0),0);const posted=mc.reduce((a,c)=>a+c.batches.reduce((b,bt)=>b+bt.posts.filter(p=>p.status==="Posted").length,0),0);return{top:posted,bot:tot};}}/>
+      <div style={{flex:1,overflowY:"auto",padding:"20px 24px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,flexWrap:"wrap",gap:10}}>
+          <div><h2 style={{margin:0,fontSize:21,fontFamily:"'DM Serif Display',serif",color:"#1a1a2e"}}>Social Media — {MONTHS[month]}</h2><p style={{margin:"3px 0 0",fontSize:12,color:"#9CA3AF"}}>{clients.length} clients · {totP} posts{urgSm>0&&<span style={{marginLeft:8,color:"#BE123C",fontWeight:600}}>· 🚨 {urgSm} urgent</span>}</p></div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <SearchBar value={search} onChange={setSearch} placeholder="Search clients…"/>
+            <AZBtn sorted={sorted} onToggle={()=>setSorted(v=>!v)}/>
+            {view===0&&<button onClick={()=>setShowAdd(v=>!v)} style={{background:"#1a1a2e",color:"#fff",border:"none",padding:"8px 15px",borderRadius:8,cursor:"pointer",fontSize:12.5,fontWeight:600,display:"flex",alignItems:"center",gap:5}}><span style={{fontSize:14}}>+</span> Add Client</button>}
+          </div>
+        </div>
+        {showAdd&&view===0&&(
+          <div style={{background:"#fff",border:"1.5px solid #6366F1",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
+            {availablePresets.length>0&&<PresetPicker presets={availablePresets} onSelect={addPreset} onClose={()=>setShowAdd(false)}/>}
+            <SmNewClientForm onAdd={(name,type)=>{setData({...data,[month]:[...data[month],{clientId:uid(),clientName:name,note:"",type,expanded:true,batches:WEEKS.map(w=>newSmBatch(w))}]});setShowAdd(false);}} onCancel={()=>setShowAdd(false)}/>
+          </div>
+        )}
+        <div style={{marginBottom:18}}><SubTabs options={["Client Types","Status Breakdown"]} active={view} onChange={setView}/></div>
+        {view===0&&<SmClientTypes clients={dispClients} onUpdate={upd} onRemove={rem} sorted={sorted} openCalId={openCalId} setOpenCalId={setOpenCalId}/>}
+        {view===1&&<SmStatusBreakdown clients={clients}/>}
+      </div>
+      {undoItem&&<UndoToast item={undoItem} onUndo={()=>{undoItem.restoreFn();setUndoItem(null);}} onDismiss={()=>setUndoItem(null)}/>}
+    </div>
+  );
+}
+
+
+function PSTypeBadge({type}){
+  const ag=type==="agent";
+  return <span style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:20,border:`1px solid ${ag?"#BFDBFE":"#BBF7D0"}`,color:ag?"#1D4ED8":"#15803D",background:ag?"#EFF6FF":"#F0FDF4",whiteSpace:"nowrap"}}>{ag?"Agent":"Developer"}</span>;
+}
+
+function PSCheckCell({clientId, day, disabled, checked, onToggle}){
+  if(disabled) return <div style={{width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{color:"#D1D5DB",fontSize:16,fontWeight:300}}>—</span></div>;
+  return (
+    <div onClick={()=>onToggle(clientId,day)}
+      style={{width:22,height:22,borderRadius:5,border:checked?"2px solid #16A34A":"2px solid #D1D5DB",background:checked?"#16A34A":"#fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all .12s",flexShrink:0}}>
+      {checked&&<span style={{color:"#fff",fontSize:13,fontWeight:800,lineHeight:1}}>✓</span>}
+    </div>
+  );
+}
+
+function PSTableRow({client, dayChecks, onToggle}){
+  const dean = !!client.stories;
+  return (
+    <div style={{display:"grid",gridTemplateColumns:"1fr 100px 1fr 1fr 1fr 1fr 1fr",alignItems:"center",padding:"10px 16px",borderBottom:"1px solid #F3F4F6",gap:8}}
+      onMouseEnter={e=>e.currentTarget.style.background="#FAFAF9"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+      <div>
+        <span style={{fontSize:13.5,fontWeight:600,color:"#1a1a2e",fontFamily:"'DM Sans',sans-serif"}}>{client.name}</span>
+        {dean&&<span style={{marginLeft:7,fontSize:10,fontWeight:700,color:"#7C3AED",background:"#F5F3FF",border:"1px solid #DDD6FE",borderRadius:20,padding:"1px 7px"}}>+Stories</span>}
+      </div>
+      <PSTypeBadge type={client.type}/>
+      <div style={{display:"flex",justifyContent:"center"}}><PSCheckCell clientId={client.id} day="mon" disabled={false} checked={dayChecks[client.id]?.mon||false} onToggle={onToggle}/></div>
+      <div style={{display:"flex",justifyContent:"center"}}><PSCheckCell clientId={client.id} day="tue" disabled={!dean} checked={dean?(dayChecks[client.id]?.tue||false):false} onToggle={onToggle}/></div>
+      <div style={{display:"flex",justifyContent:"center"}}><PSCheckCell clientId={client.id} day="wed" disabled={false} checked={dayChecks[client.id]?.wed||false} onToggle={onToggle}/></div>
+      <div style={{display:"flex",justifyContent:"center"}}><PSCheckCell clientId={client.id} day="thu" disabled={!dean} checked={dean?(dayChecks[client.id]?.thu||false):false} onToggle={onToggle}/></div>
+      <div style={{display:"flex",justifyContent:"center"}}><PSCheckCell clientId={client.id} day="fri" disabled={!!client.noFriday} checked={dayChecks[client.id]?.fri||false} onToggle={onToggle}/></div>
+    </div>
+  );
+}
+
+function PSSection({title, badge, badgeColor, borderColor, clients, sorted, dayChecks, onToggle}){
+  const list = sorted ? [...clients].sort((a,b)=>a.name.localeCompare(b.name)) : clients;
+  return (
+    <div style={{background:"#fff",borderRadius:14,border:"1px solid #E5E2DC",borderLeft:`3px solid ${borderColor}`,boxShadow:"0 1px 4px rgba(0,0,0,.04)",overflow:"hidden",marginBottom:16}}>
+      <div style={{padding:"16px 18px 12px",display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:15,fontWeight:800,color:"#1a1a2e",fontFamily:"'DM Serif Display',serif"}}>{title}</span>
+        <span style={{fontSize:11,fontWeight:700,padding:"3px 11px",borderRadius:20,background:badgeColor.bg,color:badgeColor.text}}>{badge}</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 100px 1fr 1fr 1fr 1fr 1fr",padding:"8px 16px 10px",borderBottom:"1px solid #F0EEE9",gap:8}}>
+        {["Account","Type","Monday","Tuesday","Wednesday","Thursday","Friday"].map((h,i)=>(
+          <div key={h} style={{fontSize:10,fontWeight:800,color:i===3||i===5?"#C4B5FD":"#9CA3AF",letterSpacing:"0.07em",textTransform:"uppercase",textAlign:i>=2?"center":"left"}}>{h}</div>
+        ))}
+      </div>
+      {list.map(c=><PSTableRow key={c.id} client={c} dayChecks={dayChecks} onToggle={onToggle}/>)}
+    </div>
+  );
+}
+
+// ── Posting Schedule ────────────────────────────────────────────────────────
+
+const PS_REGULAR = [
+  {id:"ps-dean",   name:"Dean",         type:"agent", stories:true},
+  {id:"ps-joseph", name:"Joseph",       type:"agent"},
+  {id:"ps-paul",   name:"Paul",         type:"agent"},
+  {id:"ps-pietro", name:"Pietro",       type:"agent",  noFriday:true},
+  {id:"ps-shawn",  name:"Shawn Clarke", type:"agent"},
+  {id:"ps-susan",  name:"Susan",        type:"agent",  noFriday:true},
+  {id:"ps-tlg",    name:"TLG",          type:"agent"},
+  {id:"ps-trc",    name:"TRC",          type:"agent"},
+  {id:"ps-vsg",    name:"VSG",          type:"agent",  noFriday:true},
+  {id:"ps-72c",    name:"72 Carlyle",   type:"developer"},
+  {id:"ps-rd14",   name:"RD14",         type:"developer"},
+  {id:"ps-ritz",   name:"Ritz Carlton SB", type:"developer"},
+];
+const PS_PER_REQUEST = [
+  {id:"ps-kane",   name:"Kane",         type:"agent"},
+  {id:"ps-vis",    name:"Visconti",     type:"agent"},
+];
+
+function buildChecks(dateStr){
+  const all=[...PS_REGULAR,...PS_PER_REQUEST];
+  const m={};
+  all.forEach(c=>{m[c.id]={mon:false,tue:false,wed:false,thu:false,fri:false};});
+  return m;
+}
+
+function fmtDateKey(d){ return d.toISOString().slice(0,10); }
+
+function PostingSchedule({checks, setChecks}){
+  const today = new Date();
+  const [selDate, setSelDate] = useState(today);
+  const [sorted, setSorted] = useState(false);
+  const [showCal, setShowCal] = useState(false);
+  const [calMonth, setCalMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+
+  const dateKey = fmtDateKey(selDate);
+  const dayChecks = checks[dateKey] || buildChecks(dateKey);
+
+  function toggle(clientId, day){
+    const cur = checks[dateKey] || buildChecks(dateKey);
+    const next = {...checks, [dateKey]: {...cur, [clientId]: {...cur[clientId], [day]: !cur[clientId][day]}}};
+    setChecks(next);
+  }
+
+  const dow = selDate.getDay(); // 0=Sun,1=Mon,3=Wed,5=Fri
+  const isPostingDay = dow===1||dow===3||dow===5;
+  const dayName = selDate.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"});
+
+  // Sort helpers
+  // Calendar helpers
+  function calDays(){
+    const yr=calMonth.getFullYear(), mo=calMonth.getMonth();
+    const first=new Date(yr,mo,1).getDay();
+    const last=new Date(yr,mo+1,0).getDate();
+    const days=[];
+    for(let i=0;i<first;i++) days.push(null);
+    for(let i=1;i<=last;i++) days.push(new Date(yr,mo,i));
+    return days;
+  }
+  function isSameDay(a,b){ return a&&b&&a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); }
+  function isPostDay(d){ if(!d) return false; const dw=d.getDay(); return dw===1||dw===3||dw===5; }
+
+  return (
+    <div style={{overflowY:"auto",height:"100%",padding:"20px 28px"}}>
+      {/* Header card */}
+      <div style={{background:"#fff",borderRadius:14,border:"1px solid #E5E2DC",borderLeft:"3px solid #6366F1",padding:"18px 22px",marginBottom:20,display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:16,flexWrap:"wrap",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:14}}>
+          <div style={{width:40,height:40,borderRadius:10,background:"#EEF2FF",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>📅</div>
+          <div>
+            <div style={{fontSize:17,fontWeight:800,color:"#1a1a2e",fontFamily:"'DM Serif Display',serif"}}>Social Media Posting Schedule</div>
+            <div style={{fontSize:12,color:"#9CA3AF",marginTop:2}}>Monday, Wednesday & Friday</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:10,alignItems:"center"}}>
+          <AZBtn sorted={sorted} onToggle={()=>setSorted(v=>!v)}/>
+          {/* Date picker button */}
+          <div style={{position:"relative"}}>
+            <button onClick={()=>setShowCal(v=>!v)}
+              style={{display:"flex",alignItems:"center",gap:8,border:"1.5px solid #E5E2DC",borderRadius:9,padding:"8px 14px",background:"#FAFAF9",cursor:"pointer",fontSize:13,fontWeight:600,color:"#1a1a2e",fontFamily:"'DM Sans',sans-serif"}}>
+              <span style={{fontSize:15}}>📆</span>
+              {selDate.toLocaleDateString("en-US",{month:"long",day:"2-digit",year:"numeric"})}
+            </button>
+            {showCal&&(
+              <div style={{position:"absolute",right:0,top:"calc(100% + 8px)",zIndex:100,background:"#fff",borderRadius:12,border:"1px solid #E5E2DC",boxShadow:"0 8px 32px rgba(0,0,0,.12)",padding:"14px 16px",width:280}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                  <button onClick={()=>setCalMonth(d=>new Date(d.getFullYear(),d.getMonth()-1,1))} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,color:"#6B7280",padding:"2px 6px"}}>‹</button>
+                  <span style={{fontSize:13,fontWeight:700,color:"#1a1a2e"}}>{calMonth.toLocaleDateString("en-US",{month:"long",year:"numeric"})}</span>
+                  <button onClick={()=>setCalMonth(d=>new Date(d.getFullYear(),d.getMonth()+1,1))} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,color:"#6B7280",padding:"2px 6px"}}>›</button>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:6}}>
+                  {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d=><div key={d} style={{textAlign:"center",fontSize:10,fontWeight:700,color:"#9CA3AF",padding:"2px 0"}}>{d}</div>)}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+                  {calDays().map((d,i)=>{
+                    if(!d) return <div key={"e"+i}/>;
+                    const sel=isSameDay(d,selDate), todayD=isSameDay(d,today), post=isPostDay(d);
+                    return (
+                      <button key={i} onClick={()=>{setSelDate(d);setShowCal(false);}}
+                        style={{textAlign:"center",padding:"6px 2px",borderRadius:7,border:"none",cursor:"pointer",fontSize:12.5,fontWeight:sel?800:post?600:400,
+                          background:sel?"#1a1a2e":todayD?"#EEF2FF":"transparent",
+                          color:sel?"#fff":post?"#4338CA":"#9CA3AF",
+                          outline:todayD&&!sel?"2px solid #C7D2FE":"none",outlineOffset:"-2px"}}>
+                        {d.getDate()}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Day context banner */}
+      <div style={{marginBottom:18,padding:"10px 16px",borderRadius:9,border:`1px solid ${isPostingDay?"#BBF7D0":"#FDE68A"}`,background:isPostingDay?"#F0FDF4":"#FFFBEB",display:"flex",alignItems:"center",gap:8}}>
+        <span style={{fontSize:14}}>{isPostingDay?"✅":"⚠️"}</span>
+        <span style={{fontSize:12.5,fontFamily:"'DM Sans',sans-serif",color:isPostingDay?"#15803D":"#92400E"}}>
+          <strong>Viewing schedule for {dayName}.</strong>{" "}
+          {isPostingDay?"This is a posting day.":"No posting on this day — posts go out Monday, Wednesday & Friday only."}
+        </span>
+      </div>
+
+      <PSSection title="Regular Posting Schedule" badge="Monday, Wednesday, Friday" badgeColor={{bg:"#EFF6FF",text:"#1D4ED8"}} borderColor="#3B82F6" clients={PS_REGULAR} sorted={sorted} dayChecks={dayChecks} onToggle={toggle}/>
+      <PSSection title="Per Request" badge="As Needed" badgeColor={{bg:"#F5F3FF",text:"#7C3AED"}} borderColor="#8B5CF6" clients={PS_PER_REQUEST} sorted={sorted} dayChecks={dayChecks} onToggle={toggle}/>
+
+      {/* Posting History */}
+      {Object.keys(checks).length>0&&(()=>{
+        const allDays=["mon","tue","wed","thu","fri"];
+        const DAY_LABELS={mon:"Mon",tue:"Tue",wed:"Wed",thu:"Thu",fri:"Fri"};
+        const history=Object.entries(checks)
+          .map(([dk,dc])=>({dk,anyChecked:Object.values(dc).some(d=>Object.values(d).some(Boolean)),dc}))
+          .filter(({anyChecked,dk})=>anyChecked&&dk!==fmtDateKey(selDate))
+          .sort((a,b)=>b.dk.localeCompare(a.dk))
+          .slice(0,30);
+        if(!history.length) return null;
+        return (
+          <div style={{marginTop:8}}>
+            <div style={{fontSize:11,fontWeight:800,color:"#9CA3AF",letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:10}}>Posting History</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {history.map(({dk,dc})=>{
+                const d=new Date(dk+"T12:00:00");
+                const label=d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+                const allClients=[...PS_REGULAR,...PS_PER_REQUEST];
+                const checked=allClients.filter(cl=>allDays.some(day=>dc[cl.id]?.[day]));
+                return (
+                  <div key={dk} style={{background:"#fff",borderRadius:10,border:"1px solid #E5E2DC",padding:"10px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                    <span style={{fontSize:12,fontWeight:700,color:"#1a1a2e",minWidth:90,whiteSpace:"nowrap"}}>{label}</span>
+                    <div style={{flex:1,display:"flex",flexWrap:"wrap",gap:5}}>
+                      {checked.map(cl=>{
+                        const days=allDays.filter(day=>dc[cl.id]?.[day]);
+                        return <span key={cl.id} style={{fontSize:11,background:"#F0FDF4",color:"#15803D",border:"1px solid #BBF7D0",borderRadius:20,padding:"2px 9px",whiteSpace:"nowrap"}}>{cl.name} <span style={{opacity:.7}}>{days.map(d=>DAY_LABELS[d]).join(" · ")}</span></span>;
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+// ── App ────────────────────────────────────────────────────────────────────
+const TABS = ["Eblast Pipeline","Social Media Content Production","Posting Schedule"];
+
+export default function App(){
+  const [tab,setTab]=useState(0);
+  const [ebData,setEbData]=useState(buildEbData);
+  const [smData,setSmData]=useState(buildSmData);
+  const [psChecks,setPsChecks]=useState({});
+  const [syncStatus,setSyncStatus]=useState("idle"); // idle | saving | saved | error
+  const [loading,setLoading]=useState(true);
+  const saveTimer=useRef(null);
+
+  // Load on mount
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const [eb,sm,ps]=await Promise.all([dbLoad("eblast_data"),dbLoad("sm_data"),dbLoad("ps_checks")]);
+        if(eb&&Object.keys(eb).length) setEbData(eb);
+        if(sm&&Object.keys(sm).length) setSmData(sm);
+        if(ps&&Object.keys(ps).length) setPsChecks(ps);
+      }catch(e){ console.error("Load error",e); }
+      setLoading(false);
+    })();
+  },[]);
+
+  // Debounced auto-save whenever data changes
+  const scheduleSave = useCallback((key,value)=>{
+    setSyncStatus("saving");
+    if(saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current=setTimeout(async()=>{
+      try{
+        await dbSave(key,value);
+        setSyncStatus("saved");
+        setTimeout(()=>setSyncStatus("idle"),2000);
+      }catch(e){
+        setSyncStatus("error");
+        console.error("Save error",e);
+      }
+    },1200);
+  },[]);
+
+  function updateEbData(d){ setEbData(d); scheduleSave("eblast_data",d); }
+  function updateSmData(d){ setSmData(d); scheduleSave("sm_data",d); }
+  function updatePsChecks(d){ setPsChecks(d); scheduleSave("ps_checks",d); }
+
+  const SyncDot = ()=>{
+    if(syncStatus==="idle") return null;
+    const map={saving:{color:"#F59E0B",label:"Saving…"},saved:{color:"#16A34A",label:"Saved ✓"},error:{color:"#F43F5E",label:"Save failed"}};
+    const s=map[syncStatus];
+    return <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:s.color,fontFamily:"'DM Sans',sans-serif"}}><span style={{width:6,height:6,borderRadius:"50%",background:s.color,display:"inline-block"}}/>{s.label}</div>;
+  };
+
+  if(loading) return (
+    <div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#1e1e1e",flexDirection:"column",gap:16}}>
+      <span style={{fontFamily:"'DM Serif Display',serif",fontSize:28,color:"#E8E4DC"}}>YTL CRE<em>ATIVE</em></span>
+      <div style={{fontSize:13,color:"#6B6860",fontFamily:"'DM Sans',sans-serif"}}>Loading your board…</div>
+      <div style={{width:120,height:3,background:"#2a2a2a",borderRadius:2,overflow:"hidden"}}><div style={{width:"40%",height:"100%",background:"#6366F1",borderRadius:2,animation:"slide 1s infinite"}}/></div>
+      <style>{`@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(350%)}}`}</style>
+    </div>
+  );
+
+  return (
+    <>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700;800&display=swap');*{box-sizing:border-box;}body{margin:0;background:#F0EEE9;}::-webkit-scrollbar{width:5px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:#D1CECA;border-radius:3px;}`}</style>
+      <div style={{fontFamily:"'DM Sans',sans-serif",height:"100vh",background:"#F0EEE9",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        <div style={{background:"#1e1e1e",color:"#E8E4DC",padding:"0 26px",display:"flex",alignItems:"center",justifyContent:"space-between",height:54,flexShrink:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:16}}>
+            <span style={{fontFamily:"'DM Serif Display',serif",fontSize:19,letterSpacing:"0.03em",color:"#E8E4DC"}}>YTL CRE<em style={{fontStyle:"italic"}}>ATIVE</em></span>
+            <span style={{width:1,height:20,background:"#3a3a3a"}}/>
+            <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:12,fontWeight:500,color:"#9a9a8a",letterSpacing:"0.04em"}}>Marketing Operations Board</span>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:16}}>
+            <SyncDot/>
+            <div style={{fontSize:11,color:"#6B6860"}}>{new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"})}</div>
+          </div>
+        </div>
+        <div style={{background:"#fff",borderBottom:"1px solid #E5E2DC",padding:"0 26px",display:"flex",flexShrink:0}}>
+          {TABS.map((t,i)=><button key={t} onClick={()=>setTab(i)} style={{background:"none",border:"none",borderBottom:tab===i?"2.5px solid #1a1a2e":"2.5px solid transparent",padding:"12px 16px",cursor:"pointer",fontSize:12.5,fontFamily:"'DM Sans',sans-serif",fontWeight:tab===i?700:500,color:tab===i?"#1a1a2e":"#6B6860",marginBottom:-1,whiteSpace:"nowrap"}}>{t}</button>)}
+        </div>
+        <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+          {tab===0&&<EblastPipeline data={ebData} setData={updateEbData}/>}
+          {tab===1&&<SocialMediaTab data={smData} setData={updateSmData}/>}
+          {tab===2&&<PostingSchedule checks={psChecks} setChecks={updatePsChecks}/>}
+        </div>
+      </div>
+    </>
+  );
+}
