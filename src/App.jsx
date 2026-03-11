@@ -1105,10 +1105,12 @@ export default function App(){
   const [smData,setSmData]=useState(buildSmData);
   const [psChecks,setPsChecks]=useState({});
   const [syncStatus,setSyncStatus]=useState("idle"); // idle | saving | saved | error
+  const [liveStatus,setLiveStatus]=useState("connecting"); // connecting | live | offline
   const [loading,setLoading]=useState(true);
   const saveTimer=useRef(null);
+  const isSaving=useRef(false); // flag to ignore our own realtime echoes
 
-  // Load on mount
+  // ── Load on mount ─────────────────────────────────────────────────────────
   useEffect(()=>{
     (async()=>{
       try{
@@ -1121,25 +1123,66 @@ export default function App(){
     })();
   },[]);
 
-  // Debounced auto-save whenever data changes
+  // ── Real-time subscription ────────────────────────────────────────────────
+  useEffect(()=>{
+    const channel = supabase
+      .channel("board_state_changes")
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"board_state"},
+        (payload)=>{
+          // Ignore echoes from our own saves
+          if(isSaving.current) return;
+          const {key, value} = payload.new;
+          if(key==="eblast_data") setEbData(value);
+          else if(key==="sm_data") setSmData(value);
+          else if(key==="ps_checks") setPsChecks(value);
+        }
+      )
+      .subscribe((status)=>{
+        if(status==="SUBSCRIBED") setLiveStatus("live");
+        else if(status==="CLOSED"||status==="CHANNEL_ERROR") setLiveStatus("offline");
+        else setLiveStatus("connecting");
+      });
+    return ()=>{ supabase.removeChannel(channel); };
+  },[]);
+
+  // ── Debounced save (saves immediately for multi-user responsiveness) ──────
   const scheduleSave = useCallback((key,value)=>{
     setSyncStatus("saving");
     if(saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current=setTimeout(async()=>{
       try{
+        isSaving.current=true;
         await dbSave(key,value);
+        isSaving.current=false;
         setSyncStatus("saved");
         setTimeout(()=>setSyncStatus("idle"),2000);
       }catch(e){
+        isSaving.current=false;
         setSyncStatus("error");
         console.error("Save error",e);
       }
-    },1200);
+    },600); // faster for multi-user — 600ms debounce
   },[]);
 
   function updateEbData(d){ setEbData(d); scheduleSave("eblast_data",d); }
   function updateSmData(d){ setSmData(d); scheduleSave("sm_data",d); }
   function updatePsChecks(d){ setPsChecks(d); scheduleSave("ps_checks",d); }
+
+  const LiveDot = ()=>{
+    const map={
+      live:    {color:"#16A34A", pulse:true,  label:"Live"},
+      offline: {color:"#F43F5E", pulse:false, label:"Offline"},
+      connecting:{color:"#F59E0B",pulse:false,label:"Connecting…"},
+    };
+    const s=map[liveStatus]||map.connecting;
+    return (
+      <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:s.color}}>
+        <span style={{width:6,height:6,borderRadius:"50%",background:s.color,display:"inline-block",
+          boxShadow:s.pulse?`0 0 0 2px ${s.color}40`:"none"}}/>
+        {s.label}
+      </div>
+    );
+  };
 
   const SyncDot = ()=>{
     if(syncStatus==="idle") return null;
@@ -1168,6 +1211,7 @@ export default function App(){
             <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:12,fontWeight:500,color:"#9a9a8a",letterSpacing:"0.04em"}}>Marketing Operations Board</span>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:16}}>
+            <LiveDot/>
             <SyncDot/>
             <div style={{fontSize:11,color:"#6B6860"}}>{new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"})}</div>
           </div>
