@@ -1115,8 +1115,11 @@ export default function App(){
     (async()=>{
       try{
         const [eb,sm,ps]=await Promise.all([dbLoad("eblast_data"),dbLoad("sm_data"),dbLoad("ps_checks")]);
-        if(eb&&Object.keys(eb).length) setEbData(eb);
-        if(sm&&Object.keys(sm).length) setSmData(sm);
+        // JSON storage converts integer keys to strings — convert them back
+        function fixKeys(obj){ if(!obj) return null; const r={}; Object.entries(obj).forEach(([k,v])=>{r[isNaN(k)?k:parseInt(k)]=v;}); return r; }
+        const fixedEb=fixKeys(eb); const fixedSm=fixKeys(sm);
+        if(fixedEb&&Object.keys(fixedEb).length) setEbData(fixedEb);
+        if(fixedSm&&Object.keys(fixedSm).length) setSmData(fixedSm);
         if(ps&&Object.keys(ps).length) setPsChecks(ps);
       }catch(e){ console.error("Load error",e); }
       setLoading(false);
@@ -1132,8 +1135,9 @@ export default function App(){
           // Ignore echoes from our own saves
           if(isSaving.current) return;
           const {key, value} = payload.new;
-          if(key==="eblast_data") setEbData(value);
-          else if(key==="sm_data") setSmData(value);
+          function fixKeys(obj){ if(!obj) return obj; const r={}; Object.entries(obj).forEach(([k,v])=>{r[isNaN(k)?k:parseInt(k)]=v;}); return r; }
+          if(key==="eblast_data") setEbData(fixKeys(value));
+          else if(key==="sm_data") setSmData(fixKeys(value));
           else if(key==="ps_checks") setPsChecks(value);
         }
       )
