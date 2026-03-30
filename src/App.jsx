@@ -702,8 +702,17 @@ function sendEmailReport(clients, reportType, weekInfo, monthIdx, designers){
   const subject = reportType==="weekly"
     ? `YTL Creative — Pipeline Update · ${periodLabel}`
     : `YTL Creative — ${monthName} Monthly Report`;
-  const mailto = `mailto:${GIA_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  window.open(mailto, "_blank");
+  const encoded = encodeURIComponent(body);
+  const mailto = `mailto:${GIA_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encoded}`;
+  // mailto links over ~8000 chars fail silently in many browsers
+  // Use location.href which is more reliable for mail clients
+  if(mailto.length < 8000){
+    window.location.href = mailto;
+  } else {
+    // Body too long — truncate to first 6000 chars of encoded body
+    const shortBody = body.substring(0, 2000) + "\n\n[Report truncated — open the full PDF report for complete details]";
+    window.location.href = `mailto:${GIA_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(shortBody)}`;
+  }
 }
 
 
