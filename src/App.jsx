@@ -25,7 +25,7 @@ const STATUSES = [
   "New Request","Working on Brief","Working on Design",
   "Under Norman's Review","Under Gia's Review","Sent to Client",
   "Changes Needed","Pending Client's Approval","Approved",
-  "Pending Last Week's Deployment","Deployed",
+  "Ready to Deploy","Pending Last Week's Deployment","Deployed",
 ];
 const SC = {
   "New Request":                    {bg:"#EEF2FF",text:"#4338CA",dot:"#6366F1",border:"#C7D2FE",pie:"#6366F1"},
@@ -37,6 +37,7 @@ const SC = {
   "Changes Needed":                 {bg:"#FFF1F2",text:"#BE123C",dot:"#F43F5E",border:"#FECDD3",pie:"#F43F5E"},
   "Pending Client's Approval":      {bg:"#FFF8F1",text:"#92400E",dot:"#D97706",border:"#FDE68A",pie:"#FBBF24"},
   "Approved":                       {bg:"#F0FDF4",text:"#15803D",dot:"#16A34A",border:"#86EFAC",pie:"#16A34A"},
+  "Ready to Deploy":                {bg:"#ECFDF5",text:"#065F46",dot:"#10B981",border:"#6EE7B7",pie:"#10B981"},
   "Pending Last Week's Deployment": {bg:"#FFF8F1",text:"#92400E",dot:"#D97706",border:"#FCD34D",pie:"#D97706"},
   "Deployed":                       {bg:"#F5F3FF",text:"#7C3AED",dot:"#8B5CF6",border:"#DDD6FE",pie:"#8B5CF6"},
 };
@@ -56,6 +57,17 @@ const SSC = {
   "Approved":                          {bg:"#F0FDF4",text:"#15803D",dot:"#16A34A",border:"#86EFAC",pie:"#16A34A"},
   "Scheduled":                         {bg:"#EFF6FF",text:"#1D4ED8",dot:"#3B82F6",border:"#BFDBFE",pie:"#3B82F6"},
   "Posted":                            {bg:"#F0FDF4",text:"#065F46",dot:"#059669",border:"#6EE7B7",pie:"#059669"},
+};
+
+
+const ASSET_TYPES = ["E-blast","Postcard","Invite","WhatsApp Piece","Flyer","Brochure"];
+const ASSET_TYPE_C = {
+  "E-blast":       {bg:"#EEF2FF",text:"#4338CA",border:"#C7D2FE"},
+  "Postcard":      {bg:"#FFF7ED",text:"#C2410C",border:"#FED7AA"},
+  "Invite":        {bg:"#FDF4FF",text:"#7E22CE",border:"#E9D5FF"},
+  "WhatsApp Piece":{bg:"#F0FDF4",text:"#15803D",border:"#86EFAC"},
+  "Flyer":         {bg:"#FFFBEB",text:"#B45309",border:"#FDE68A"},
+  "Brochure":      {bg:"#EFF6FF",text:"#1D4ED8",border:"#BFDBFE"},
 };
 
 const SCOPE_NUM = {"Per Request":null,"2 Eblasts/MO":2,"3 Eblasts/MO":3,"4 Eblasts/MO":4,"5 Eblasts/MO":5};
@@ -105,7 +117,7 @@ const SM_DEVS = [
 
 let _id = 0;
 function uid() { return "u"+(++_id)+Math.random().toString(36).slice(2,5); }
-function newEblast()    { return {id:uid(),name:"",status:"New Request",designer:"Eddy",monStr:"",friStr:"",thuStr:"",deployDay:"",urgent:false,note:""}; }
+function newEblast(designers)  { return {id:uid(),name:"",assetType:"E-blast",status:"New Request",designer:(designers&&designers[0])||"Eddy",monStr:"",friStr:"",thuStr:"",deployDay:"",urgent:false,note:""}; }
 function newSmPost()    { return {id:uid(),name:"",status:"Drafted",needsDesign:false,urgent:false}; }
 function newSmBatch(w)  { return {id:uid(),week:w,status:"Drafted",startDate:"",endDate:"",posts:[]}; }
 
@@ -130,6 +142,18 @@ function fmtRange(s,e){
   return s||e||null;
 }
 
+
+
+// Terminal state depends on asset type
+function isAssetDone(status, assetType){
+  if(assetType==="E-blast"||!assetType) return status==="Deployed";
+  return status==="Approved"||status==="Deployed";
+}
+// Statuses available per asset type
+function statusesForType(assetType){
+  if(assetType==="E-blast"||!assetType) return STATUSES;
+  return STATUSES.filter(s=>s!=="Ready to Deploy");
+}
 
 // ── Week helpers ────────────────────────────────────────────────────────────
 // Get the 4 Mon-Fri production weeks for a given month index
@@ -176,6 +200,12 @@ function PieLabel({cx,cy,midAngle,innerRadius,outerRadius,percent}){
   return <text x={cx+r*Math.cos(-midAngle*R)} y={cy+r*Math.sin(-midAngle*R)} fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={700}>{Math.round(percent*100)}%</text>;
 }
 
+
+
+function AssetTypeBadge({type}){
+  const s = ASSET_TYPE_C[type]||{bg:"#F3F4F6",text:"#6B7280",border:"#E5E7EB"};
+  return <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,border:`1px solid ${s.border}`,color:s.text,background:s.bg,whiteSpace:"nowrap"}}>{type||"E-blast"}</span>;
+}
 
 function SearchBar({value, onChange, placeholder}){
   return (
@@ -322,13 +352,44 @@ function WeekPicker({monStr, friStr, deployDay, monthIdx, openId, pickerId, setO
   );
 }
 
+
+function DesignerManager({designers, onSave, onClose}){
+  const [list, setList] = useState([...designers]);
+  const [newName, setNewName] = useState("");
+  function add(){ const n=newName.trim(); if(!n||list.includes(n)) return; setList(p=>[...p,n]); setNewName(""); }
+  function remove(d){ if(list.length<=1) return; setList(p=>p.filter(x=>x!==d)); }
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onClose}>
+      <div style={{background:"#fff",borderRadius:16,padding:"24px 28px",width:340,boxShadow:"0 20px 60px rgba(0,0,0,.2)"}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
+          <h3 style={{margin:0,fontSize:16,fontFamily:"'DM Serif Display',serif",color:"#1a1a2e"}}>Manage Designers</h3>
+          <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#9CA3AF"}}>✕</button>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+          {list.map(d=>(
+            <div key={d} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#FAFAF9",borderRadius:8,padding:"9px 12px",border:"1px solid #E5E2DC"}}>
+              <span style={{fontSize:13.5,fontWeight:600,color:"#1a1a2e",fontFamily:"'DM Sans',sans-serif"}}>{d}</span>
+              <button onClick={()=>remove(d)} style={{background:"none",border:"none",cursor:"pointer",color:"#D1D5DB",fontSize:14,lineHeight:1,padding:"2px 4px"}} onMouseEnter={e=>e.currentTarget.style.color="#F43F5E"} onMouseLeave={e=>e.currentTarget.style.color="#D1D5DB"}>✕</button>
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:8,marginBottom:18}}>
+          <input value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="Add designer name..." style={{flex:1,border:"1.5px solid #E5E2DC",borderRadius:8,padding:"7px 10px",fontSize:13,fontFamily:"'DM Sans',sans-serif",color:"#1a1a2e",outline:"none"}}/>
+          <button onClick={add} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontSize:13,fontWeight:700}}>+</button>
+        </div>
+        <button onClick={()=>onSave(list)} style={{width:"100%",background:"#1a1a2e",color:"#fff",border:"none",borderRadius:10,padding:"10px",cursor:"pointer",fontSize:13.5,fontWeight:700,fontFamily:"'DM Sans',sans-serif"}}>Save</button>
+      </div>
+    </div>
+  );
+}
+
 // ── Eblast Pipeline ────────────────────────────────────────────────────────
-function EbRow({eblast,onChange,onRemove,canRemove,monthIdx,openPickerId,setOpenPickerId}){
+function EbRow({eblast,onChange,onRemove,canRemove,monthIdx,openPickerId,setOpenPickerId,designers}){
   const c=SC[eblast.status];
   // check overdue: deployDay selected, fri passed, not Deployed
   const today=new Date(); today.setHours(0,0,0,0);
   const friDate=strToDate(eblast.friStr);
-  const isOverdue = friDate && friDate < today && eblast.status!=="Deployed" && eblast.deployDay;
+  const isOverdue = friDate && friDate < today && eblast.deployDay && !isAssetDone(eblast.status, eblast.assetType);
   const borderColor = eblast.urgent?"#FECDD3":isOverdue?"#FCA5A5":"#EEEBE6";
   const bgColor = eblast.urgent?"#FFF1F2":isOverdue?"#FFF5F5":"#FAFAF9";
   return (
@@ -342,9 +403,15 @@ function EbRow({eblast,onChange,onRemove,canRemove,monthIdx,openPickerId,setOpen
         </select>
         <span style={{position:"absolute",right:7,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",fontSize:8,color:"#9CA3AF"}}>▾</span>
       </div>
+      <div style={{flex:"0 0 100px",position:"relative"}}>
+        <select value={eblast.assetType||"E-blast"} onChange={e=>onChange("assetType",e.target.value)} style={{width:"100%",border:`1.5px solid ${ASSET_TYPE_C[eblast.assetType||"E-blast"]?.border||"#E5E2DC"}`,borderRadius:7,padding:"5px 20px 5px 8px",fontSize:11,fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:ASSET_TYPE_C[eblast.assetType||"E-blast"]?.text||"#374151",background:ASSET_TYPE_C[eblast.assetType||"E-blast"]?.bg||"#F9FAFB",outline:"none",cursor:"pointer",appearance:"none",boxSizing:"border-box"}}>
+          {ASSET_TYPES.map(t=><option key={t}>{t}</option>)}
+        </select>
+        <span style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",fontSize:8,color:"#9CA3AF"}}>▾</span>
+      </div>
       <div style={{flex:"0 0 88px",position:"relative"}}>
         <select value={eblast.designer} onChange={e=>onChange("designer",e.target.value)} style={{width:"100%",border:"1.5px solid #E5E2DC",borderRadius:7,padding:"5px 20px 5px 9px",fontSize:12.5,fontFamily:"'DM Sans',sans-serif",fontWeight:600,color:"#1a1a2e",background:"#fff",outline:"none",cursor:"pointer",appearance:"none",boxSizing:"border-box"}}>
-          {DESIGNERS.map(d=><option key={d}>{d}</option>)}
+          {designers.map(d=><option key={d}>{d}</option>)}
         </select>
         <span style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",fontSize:8,color:"#9CA3AF"}}>▾</span>
       </div>
@@ -355,7 +422,7 @@ function EbRow({eblast,onChange,onRemove,canRemove,monthIdx,openPickerId,setOpen
   );
 }
 
-function EbClientCard({client,onUpdate,onRemove,monthIdx}){
+function EbClientCard({client,onUpdate,onRemove,monthIdx,designers}){
   const [openPickerId,setOpenPickerId]=useState(null);
   function upd(eid,f,v){
     if(f==="_week"){
@@ -383,7 +450,7 @@ function EbClientCard({client,onUpdate,onRemove,monthIdx}){
         </div>
         <span style={{fontSize:11,color:"#9CA3AF",whiteSpace:"nowrap"}}>{dep}/{tot}</span>
         <div style={{width:56,height:4,background:"#F0EEE9",borderRadius:2,flexShrink:0}}><div style={{width:(tot?(dep/tot)*100:0)+"%",height:"100%",background:"#8B5CF6",borderRadius:2}}/></div>
-        <button onClick={e=>{e.stopPropagation();add();}} style={{background:"#F0EEE9",border:"none",borderRadius:6,padding:"3px 9px",fontSize:11,fontWeight:700,color:"#6B6860",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a2e";e.currentTarget.style.color="#fff";}} onMouseLeave={e=>{e.currentTarget.style.background="#F0EEE9";e.currentTarget.style.color="#6B6860";}}>+ Eblast</button>
+        <button onClick={e=>{e.stopPropagation();add();}} style={{background:"#F0EEE9",border:"none",borderRadius:6,padding:"3px 9px",fontSize:11,fontWeight:700,color:"#6B6860",cursor:"pointer"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a2e";e.currentTarget.style.color="#fff";}} onMouseLeave={e=>{e.currentTarget.style.background="#F0EEE9";e.currentTarget.style.color="#6B6860";}}>+ Asset</button>
         <button onClick={e=>{e.stopPropagation();onUpdate({...client,showNote:!client.showNote});}} title="Client note" style={{background:client.showNote||client.clientNote?"#FFFBEB":"none",border:client.clientNote?"1.5px solid #FDE68A":"none",borderRadius:6,padding:"3px 7px",fontSize:13,cursor:"pointer",opacity:client.showNote||client.clientNote?1:0.4}} onMouseEnter={e=>e.currentTarget.style.opacity="1"} onMouseLeave={e=>e.currentTarget.style.opacity=client.showNote||client.clientNote?"1":"0.4"}>📝</button>
         <button onClick={e=>{e.stopPropagation();onRemove();}} style={{background:"none",border:"none",cursor:"pointer",color:"#D1D5DB",fontSize:15,padding:"2px 3px",lineHeight:1}} onMouseEnter={e=>e.currentTarget.style.color="#F43F5E"} onMouseLeave={e=>e.currentTarget.style.color="#D1D5DB"}>✕</button>
       </div>
@@ -391,35 +458,92 @@ function EbClientCard({client,onUpdate,onRemove,monthIdx}){
       {client.expanded&&(
         <div style={{padding:"0 16px 13px",display:"flex",flexDirection:"column",gap:6}}>
           <div style={{display:"flex",gap:8,marginBottom:1}}>
-            {[["Week / Deploy","0 0 auto"],["Eblast Name","1 1 140px"],["Status","0 0 188px"],["Designer","0 0 88px"]].map(([l,f])=><div key={l} style={{fontSize:9.5,fontWeight:700,color:"#9CA3AF",letterSpacing:"0.07em",textTransform:"uppercase",flex:f}}>{l}</div>)}
+            {[["Week / Deploy","0 0 auto"],["Type","0 0 100px"],["Asset Name","1 1 140px"],["Status","0 0 188px"],["Designer","0 0 88px"]].map(([l,f])=><div key={l} style={{fontSize:9.5,fontWeight:700,color:"#9CA3AF",letterSpacing:"0.07em",textTransform:"uppercase",flex:f}}>{l}</div>)}
             <div style={{width:22}}/>
           </div>
-          {client.eblasts.map(e=><EbRow key={e.id} eblast={e} onChange={(f,v)=>upd(e.id,f,v)} onRemove={()=>rem(e.id)} canRemove={client.eblasts.length>1} monthIdx={monthIdx} openPickerId={openPickerId} setOpenPickerId={setOpenPickerId}/>)}
+          {client.eblasts.map(e=><EbRow key={e.id} eblast={e} onChange={(f,v)=>upd(e.id,f,v)} onRemove={()=>rem(e.id)} canRemove={client.eblasts.length>1} monthIdx={monthIdx} openPickerId={openPickerId} setOpenPickerId={setOpenPickerId} designers={designers}/>)}
         </div>
       )}
     </div>
   );
 }
 
-function EbStatusBreakdown({clients, monthIdx}){
+function StatusGroupCard({status, items, today, onUpdateAsset}){
+  const sc = SC[status];
+  const PREVIEW = 5;
+  const [expanded, setExpanded] = useState(status !== "Deployed");
+  const [showAll, setShowAll] = useState(false);
+  const visible = !expanded ? [] : showAll ? items : items.slice(0, PREVIEW);
+  const hiddenCount = items.length - PREVIEW;
+  return (
+    <div style={{background:"#fff",borderRadius:12,border:`1px solid ${sc.border}`,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
+      <div onClick={()=>setExpanded(v=>!v)} style={{display:"flex",alignItems:"center",gap:10,padding:"12px 18px",background:sc.bg,borderBottom:expanded?`1px solid ${sc.border}`:"none",cursor:"pointer",userSelect:"none"}}>
+        <span style={{width:9,height:9,borderRadius:"50%",background:sc.dot,flexShrink:0}}/>
+        <span style={{fontSize:13,fontWeight:700,color:sc.text,flex:1}}>{status}</span>
+        <span style={{fontSize:11.5,fontWeight:700,color:sc.text,background:"rgba(255,255,255,.6)",borderRadius:20,padding:"1px 10px"}}>{items.length}</span>
+        <span style={{fontSize:10,color:sc.text,opacity:0.6,marginLeft:2}}>{expanded?"▲":"▼"}</span>
+      </div>
+      {expanded&&(
+        <div style={{padding:"10px 18px",display:"flex",flexDirection:"column",gap:6}}>
+          {visible.map(item=>{
+            const friD=strToDate(item.friStr);
+            const overdue=friD&&friD<today&&item.deployDay&&!isAssetDone(item.status,item.assetType);
+            return (
+              <div key={item.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:overdue?"#FFF5F5":"#FAFAF9",borderRadius:8,border:overdue?"1.5px solid #FCA5A5":"1px solid #EEEBE6",flexWrap:"wrap"}}>
+                <AssetTypeBadge type={item.assetType||"E-blast"}/>
+                {item.monStr
+                  ?<span style={{fontSize:10,fontWeight:700,color:"#6D28D9",background:"#F5F3FF",borderRadius:5,padding:"2px 7px",whiteSpace:"nowrap"}}>{fmtWeekLabel(strToDate(item.monStr),strToDate(item.friStr))}{item.deployDay?" · "+item.deployDay:""}</span>
+                  :<span style={{fontSize:10,color:"#C4BFBA",background:"#F8F7F4",borderRadius:5,padding:"2px 7px"}}>No week</span>}
+                <div style={{flex:1,minWidth:80}}><span style={{fontSize:12.5,fontWeight:600,color:"#1a1a2e"}}>{item.name||<span style={{color:"#C4BFBA",fontStyle:"italic"}}>Unnamed</span>}</span></div>
+                <span style={{fontSize:11,color:"#9CA3AF",whiteSpace:"nowrap"}}>{item.clientName}</span>
+                <span style={{fontSize:10.5,fontWeight:600,color:"#9CA3AF",background:"#F0EEE9",borderRadius:5,padding:"2px 6px"}}>{item.designer}</span>
+                {overdue&&<span style={{fontSize:10,fontWeight:700,color:"#DC2626",background:"#FEE2E2",borderRadius:20,padding:"1px 8px"}}>OVERDUE</span>}
+                {item.urgent&&<span style={{fontSize:12}}>🚨</span>}
+                {onUpdateAsset&&(()=>{const sc2=SC[item.status]||{};return(
+                  <div style={{position:"relative",flexShrink:0}}>
+                    <select value={item.status} onChange={e=>onUpdateAsset(item.id,item.clientId,"status",e.target.value)}
+                      style={{border:`1.5px solid ${sc2.border||"#E5E2DC"}`,borderRadius:6,padding:"3px 22px 3px 8px",fontSize:11,fontFamily:"'DM Sans',sans-serif",fontWeight:700,color:sc2.text,background:sc2.bg,outline:"none",cursor:"pointer",appearance:"none"}}>
+                      {statusesForType(item.assetType).map(s=><option key={s}>{s}</option>)}
+                    </select>
+                    <span style={{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",fontSize:7,color:sc2.text}}>▾</span>
+                  </div>
+                );})()}
+              </div>
+            );
+          })}
+          {!showAll&&hiddenCount>0&&(
+            <button onClick={e=>{e.stopPropagation();setShowAll(true);}} style={{background:"none",border:"1px dashed #E5E2DC",borderRadius:8,padding:"7px",cursor:"pointer",fontSize:12,color:"#9CA3AF",fontFamily:"'DM Sans',sans-serif",fontWeight:600,textAlign:"center"}}>
+              Show {hiddenCount} more →
+            </button>
+          )}
+          {showAll&&items.length>PREVIEW&&(
+            <button onClick={e=>{e.stopPropagation();setShowAll(false);}} style={{background:"none",border:"1px dashed #E5E2DC",borderRadius:8,padding:"7px",cursor:"pointer",fontSize:12,color:"#9CA3AF",fontFamily:"'DM Sans',sans-serif",fontWeight:600,textAlign:"center"}}>
+              Show less ↑
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EbStatusBreakdown({clients, monthIdx, onUpdateAsset}){
   const [weekFilter, setWeekFilter] = useState("All");
   const year = new Date().getFullYear();
   const monthWeeks = useMemo(()=>getMonthWeeks(monthIdx||new Date().getMonth(), year),[monthIdx]);
+  const today = new Date(); today.setHours(0,0,0,0);
 
-  // All eblasts flat with clientName
   const allEblasts = useMemo(()=>{
     const arr=[];
-    clients.forEach(c=>c.eblasts.forEach(e=>arr.push({...e,clientName:c.clientName})));
+    clients.forEach(c=>c.eblasts.forEach(e=>arr.push({...e,clientName:c.clientName,clientId:c.clientId})));
     return arr;
   },[clients]);
 
-  // Filter by selected week
   const filtered = useMemo(()=>{
     if(weekFilter==="All") return allEblasts;
     const wk = monthWeeks[parseInt(weekFilter)-1];
     if(!wk) return allEblasts;
-    const wkStr = dateToStr(wk.mon);
-    return allEblasts.filter(e=>e.monStr===wkStr);
+    return allEblasts.filter(e=>e.monStr===dateToStr(wk.mon));
   },[allEblasts, weekFilter, monthWeeks]);
 
   const grouped = useMemo(()=>{
@@ -428,73 +552,85 @@ function EbStatusBreakdown({clients, monthIdx}){
     return m;
   },[filtered]);
 
+  // Overdue: deploy date passed, not Deployed
+  const overdueItems = useMemo(()=>
+    allEblasts.filter(e=>{
+      const f=strToDate(e.friStr);
+      return f&&f<today&&e.deployDay&&!isAssetDone(e.status,e.assetType);
+    }).sort((a,b)=>a.friStr.localeCompare(b.friStr))
+  ,[allEblasts]);
+
   const pieData=STATUSES.map(s=>({name:s,value:grouped[s].length})).filter(d=>d.value>0);
   const {prod,allow}=useMemo(()=>{let p=0,a=0;clients.forEach(c=>{p+=c.eblasts.length;const n=SCOPE_NUM[c.scope];if(n!=null)a+=n;});return{prod:p,allow:a};},[clients]);
   const prodData=useMemo(()=>{const ov=Math.max(0,prod-allow),un=Math.max(0,allow-prod),mt=Math.min(prod,allow);return[{name:"Produced",value:mt,color:"#16A34A"},ov>0?{name:"Over Allowance",value:ov,color:"#F43F5E"}:null,un>0?{name:"Remaining",value:un,color:"#E5E2DC"}:null].filter(Boolean);},[prod,allow]);
   const active=STATUSES.filter(s=>grouped[s].length>0),empty=STATUSES.filter(s=>grouped[s].length===0);
-  const today=new Date(); today.setHours(0,0,0,0);
 
   if(!clients.length) return <EmptyMsg msg="No data yet."/>;
   return (
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
-      {/* Week filter tabs */}
+      {/* Week filter */}
       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
         <span style={{fontSize:11,fontWeight:700,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:"0.06em"}}>Week:</span>
         {["All","1","2","3","4"].map(w=>{
-          const wk = w==="All"?null:monthWeeks[parseInt(w)-1];
-          const label = w==="All"?"All weeks":`Wk ${w}${wk?" · "+fmtWeekLabel(wk.mon,wk.fri):""}`;
-          return (
-            <button key={w} onClick={()=>setWeekFilter(w)}
-              style={{background:weekFilter===w?"#1a1a2e":"#F0EEE9",color:weekFilter===w?"#fff":"#6B6860",border:"none",borderRadius:7,padding:"5px 12px",cursor:"pointer",fontSize:11.5,fontWeight:weekFilter===w?700:500,fontFamily:"'DM Sans',sans-serif",whiteSpace:"nowrap"}}>
-              {label}
-            </button>
-          );
+          const wk=w==="All"?null:monthWeeks[parseInt(w)-1];
+          const label=w==="All"?"All weeks":`Wk ${w}${wk?" · "+fmtWeekLabel(wk.mon,wk.fri):""}`;
+          return <button key={w} onClick={()=>setWeekFilter(w)} style={{background:weekFilter===w?"#1a1a2e":"#F0EEE9",color:weekFilter===w?"#fff":"#6B6860",border:"none",borderRadius:7,padding:"5px 12px",cursor:"pointer",fontSize:11.5,fontWeight:weekFilter===w?700:500,fontFamily:"'DM Sans',sans-serif",whiteSpace:"nowrap"}}>{label}</button>;
         })}
       </div>
+
+      {/* 3 charts row */}
       <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
-        <div style={{flex:"1 1 320px",background:"#fff",borderRadius:14,border:"1px solid #E5E2DC",padding:"18px 20px",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
+        <div style={{flex:"1 1 280px",background:"#fff",borderRadius:14,border:"1px solid #E5E2DC",padding:"18px 20px",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
           <div style={{fontSize:11,fontWeight:800,color:"#1a1a2e",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:2}}>Status Distribution</div>
-          <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>{filtered.length} eblasts{weekFilter!=="All"?` in week ${weekFilter}`:""}</div>
-          <ResponsiveContainer width="100%" height={220}><PieChart><Pie data={pieData} cx="50%" cy="50%" outerRadius={85} dataKey="value" labelLine={false} label={<PieLabel/>}>{pieData.map((d,i)=><Cell key={i} fill={SC[d.name]?.pie||"#9CA3AF"}/>)}</Pie><Tooltip content={<TTip/>}/><Legend iconType="circle" iconSize={8} formatter={v=><span style={{fontSize:11,color:"#374151"}}>{v}</span>} wrapperStyle={{paddingTop:10}}/></PieChart></ResponsiveContainer>
+          <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>{filtered.length} assets{weekFilter!=="All"?` · week ${weekFilter}`:""}</div>
+          <ResponsiveContainer width="100%" height={200}><PieChart><Pie data={pieData} cx="50%" cy="50%" outerRadius={78} dataKey="value" labelLine={false} label={<PieLabel/>}>{pieData.map((d,i)=><Cell key={i} fill={SC[d.name]?.pie||"#9CA3AF"}/>)}</Pie><Tooltip content={<TTip/>}/><Legend iconType="circle" iconSize={8} formatter={v=><span style={{fontSize:10.5,color:"#374151"}}>{v}</span>} wrapperStyle={{paddingTop:8}}/></PieChart></ResponsiveContainer>
         </div>
-        <div style={{flex:"1 1 260px",background:"#fff",borderRadius:14,border:"1px solid #E5E2DC",padding:"18px 20px",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
+        <div style={{flex:"1 1 220px",background:"#fff",borderRadius:14,border:"1px solid #E5E2DC",padding:"18px 20px",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
           <div style={{fontSize:11,fontWeight:800,color:"#1a1a2e",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:2}}>Production vs Allowance</div>
           <div style={{fontSize:11,color:"#9CA3AF",marginBottom:10}}>{prod} produced · {allow} contracted</div>
-          <ResponsiveContainer width="100%" height={150}><PieChart><Pie data={prodData} cx="50%" cy="50%" outerRadius={65} dataKey="value" labelLine={false} label={<PieLabel/>}>{prodData.map((d,i)=><Cell key={i} fill={d.color}/>)}</Pie><Tooltip content={<TTip/>}/><Legend iconType="circle" iconSize={8} formatter={v=><span style={{fontSize:11,color:"#374151"}}>{v}</span>} wrapperStyle={{paddingTop:8}}/></PieChart></ResponsiveContainer>
-          <div style={{display:"flex",gap:8,marginTop:10}}>
-            {[{l:"Produced",v:prod,c:"#16A34A"},{l:"Contracted",v:allow,c:"#3B82F6"},{l:prod>allow?"Over":"Remaining",v:Math.abs(prod-allow),c:prod>allow?"#F43F5E":"#9CA3AF"}].map(s=>(
-              <div key={s.l} style={{flex:1,textAlign:"center",background:"#FAFAF9",borderRadius:8,padding:"8px 4px"}}>
-                <div style={{fontSize:18,fontWeight:700,color:s.c,fontFamily:"'DM Serif Display',serif"}}>{s.v}</div>
-                <div style={{fontSize:10,color:"#9CA3AF",fontWeight:600,marginTop:1}}>{s.l}</div>
+          <ResponsiveContainer width="100%" height={130}><PieChart><Pie data={prodData} cx="50%" cy="50%" outerRadius={55} dataKey="value" labelLine={false} label={<PieLabel/>}>{prodData.map((d,i)=><Cell key={i} fill={d.color}/>)}</Pie><Tooltip content={<TTip/>}/><Legend iconType="circle" iconSize={8} formatter={v=><span style={{fontSize:10.5,color:"#374151"}}>{v}</span>} wrapperStyle={{paddingTop:6}}/></PieChart></ResponsiveContainer>
+          <div style={{display:"flex",gap:6,marginTop:8}}>
+            {[{l:"Produced",v:prod,c:"#16A34A"},{l:"Contracted",v:allow,c:"#3B82F6"},{l:prod>allow?"Over":"Left",v:Math.abs(prod-allow),c:prod>allow?"#F43F5E":"#9CA3AF"}].map(s=>(
+              <div key={s.l} style={{flex:1,textAlign:"center",background:"#FAFAF9",borderRadius:8,padding:"6px 2px"}}>
+                <div style={{fontSize:16,fontWeight:700,color:s.c,fontFamily:"'DM Serif Display',serif"}}>{s.v}</div>
+                <div style={{fontSize:9.5,color:"#9CA3AF",fontWeight:600,marginTop:1}}>{s.l}</div>
               </div>
             ))}
           </div>
         </div>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-      {active.map(status=>{const sc=SC[status],items=grouped[status];return(
-        <div key={status} style={{background:"#fff",borderRadius:12,border:`1px solid ${sc.border}`,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 18px",background:sc.bg,borderBottom:`1px solid ${sc.border}`}}>
-            <span style={{width:9,height:9,borderRadius:"50%",background:sc.dot,flexShrink:0}}/><span style={{fontSize:13,fontWeight:700,color:sc.text,flex:1}}>{status}</span><span style={{fontSize:11.5,fontWeight:700,color:sc.text,background:"rgba(255,255,255,.6)",borderRadius:20,padding:"1px 10px"}}>{items.length}</span>
-          </div>
-          <div style={{padding:"10px 18px",display:"flex",flexDirection:"column",gap:6}}>
-            {items.sort((a,b)=>(a.monStr||"").localeCompare(b.monStr||"")).map(item=>{
-              const friD=strToDate(item.friStr);
-              const overdue=friD&&friD<today&&item.deployDay&&status!=="Deployed";
-              return (
-                <div key={item.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:overdue?"#FFF5F5":"#FAFAF9",borderRadius:8,border:overdue?"1.5px solid #FCA5A5":"1px solid #EEEBE6",flexWrap:"wrap"}}>
-                  {item.monStr?<span style={{fontSize:10,fontWeight:700,color:"#6D28D9",background:"#F5F3FF",borderRadius:5,padding:"2px 7px",whiteSpace:"nowrap"}}>{fmtWeekLabel(strToDate(item.monStr),strToDate(item.friStr))}{item.deployDay?" · Deploy "+item.deployDay:""}</span>:<span style={{fontSize:10,color:"#C4BFBA",background:"#F8F7F4",borderRadius:5,padding:"2px 7px"}}>No week set</span>}
-                  <div style={{flex:1}}><span style={{fontSize:13,fontWeight:600,color:"#1a1a2e"}}>{item.name||<span style={{color:"#C4BFBA",fontStyle:"italic"}}>Unnamed</span>}</span></div>
-                  <span style={{fontSize:11,color:"#9CA3AF"}}>{item.clientName}</span>
-                  <span style={{fontSize:10.5,fontWeight:600,color:"#9CA3AF",background:"#F0EEE9",borderRadius:5,padding:"2px 7px"}}>{item.designer}</span>
-                  {overdue&&<span style={{fontSize:10,fontWeight:700,color:"#DC2626",background:"#FEE2E2",borderRadius:20,padding:"1px 8px"}}>OVERDUE</span>}
-                  {item.urgent&&<span style={{fontSize:12}}>🚨</span>}
-                </div>
-              );
-            })}
-          </div>
+        {/* Overdue panel */}
+        <div style={{flex:"1 1 220px",background:overdueItems.length>0?"#FFF5F5":"#FAFAF9",borderRadius:14,border:`1px solid ${overdueItems.length>0?"#FCA5A5":"#E5E2DC"}`,padding:"18px 20px",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
+          <div style={{fontSize:11,fontWeight:800,color:overdueItems.length>0?"#DC2626":"#9CA3AF",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:2}}>⚠️ Overdue</div>
+          <div style={{fontSize:11,color:"#9CA3AF",marginBottom:12}}>{overdueItems.length} past deploy date</div>
+          {overdueItems.length===0
+            ? <div style={{textAlign:"center",padding:"20px 0",color:"#C4BFBA",fontSize:13}}>✓ All clear</div>
+            : <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:220,overflowY:"auto"}}>
+                {overdueItems.map(item=>{
+                  const daysOver = Math.floor((today-strToDate(item.friStr))/(1000*60*60*24));
+                  return (
+                    <div key={item.id} style={{background:"#fff",borderRadius:8,border:"1px solid #FECDD3",padding:"8px 10px"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+                        <AssetTypeBadge type={item.assetType||"E-blast"}/>
+                        <span style={{fontSize:11,fontWeight:700,color:"#DC2626"}}>{daysOver}d overdue</span>
+                      </div>
+                      <div style={{fontSize:12.5,fontWeight:600,color:"#1a1a2e",marginBottom:2}}>{item.name||<span style={{color:"#C4BFBA",fontStyle:"italic"}}>Unnamed</span>}</div>
+                      <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                        <span style={{fontSize:11,color:"#9CA3AF"}}>{item.clientName}</span>
+                        <span style={{fontSize:10,background:"#F0EEE9",color:"#6B6860",borderRadius:4,padding:"1px 6px",fontWeight:600}}>{item.status}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+          }
         </div>
-      );})}
+      </div>
+
+      {/* Status cards — collapsible + show more */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        {active.map(status=>(
+          <StatusGroupCard key={status} status={status} items={grouped[status].sort((a,b)=>(a.monStr||"").localeCompare(b.monStr||""))} today={today} onUpdateAsset={onUpdateAsset}/>
+        ))}
       </div>
       {empty.length>0&&<div><div style={{fontSize:10,fontWeight:700,color:"#C4BFBA",letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:8}}>Empty stages</div><div style={{display:"flex",flexWrap:"wrap",gap:7}}>{empty.map(s=><span key={s} style={{display:"inline-flex",alignItems:"center",gap:5,background:"#F8F7F4",color:"#B0ABA5",border:"1px solid #E5E2DC",padding:"4px 12px",borderRadius:20,fontSize:11.5,fontWeight:600}}><span style={{width:6,height:6,borderRadius:"50%",background:SC[s].dot,opacity:.35}}/>{s}</span>)}</div></div>}
     </div>
@@ -503,10 +639,10 @@ function EbStatusBreakdown({clients, monthIdx}){
 
 
 
-function EbDesignerView({clients}){
+function EbDesignerView({clients, designers}){
   const counts = useMemo(()=>{
     const m={};
-    DESIGNERS.forEach(d=>{ m[d]={total:0,urgent:0,deployed:0,byStatus:{}}; STATUSES.forEach(s=>m[d].byStatus[s]=0); });
+    designers.forEach(d=>{ m[d]={total:0,urgent:0,deployed:0,byStatus:{}}; STATUSES.forEach(s=>m[d].byStatus[s]=0); });
     clients.forEach(c=>c.eblasts.forEach(e=>{
       if(!m[e.designer]) return;
       m[e.designer].total++;
@@ -520,7 +656,7 @@ function EbDesignerView({clients}){
   return (
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
       <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
-        {DESIGNERS.map(d=>{
+        {designers.map(d=>{
           const dc=counts[d]; const pct=total?Math.round((dc.total/total)*100):0;
           return (
             <div key={d} style={{flex:"1 1 260px",background:"#fff",borderRadius:14,border:"1px solid #E5E2DC",padding:"18px 20px",boxShadow:"0 1px 4px rgba(0,0,0,.04)"}}>
@@ -555,7 +691,7 @@ function EbDesignerView({clients}){
           );
         })}
       </div>
-      {total===0&&<div style={{textAlign:"center",padding:"40px",color:"#9CA3AF",fontFamily:"'DM Sans',sans-serif",fontSize:14}}>No eblasts yet this month.</div>}
+      {total===0&&<div style={{textAlign:"center",padding:"40px",color:"#9CA3AF",fontFamily:"'DM Sans',sans-serif",fontSize:14}}>No assets yet this month.</div>}
     </div>
   );
 }
@@ -647,13 +783,14 @@ function YearOverview({data, onClose}){
   );
 }
 
-function EblastPipeline({data, setData}){
+function EblastPipeline({data, setData, designers, setDesigners}){
   const [month,setMonth]=useState(new Date().getMonth());
   const [view,setView]=useState(()=>{const v={};MONTHS.forEach((_,i)=>v[i]=1);return v;});
   const [sorted,setSorted]=useState(false);
   const [search,setSearch]=useState("");
   const [showAdd,setShowAdd]=useState(false);
   const [showYearOverview,setShowYearOverview]=useState(false);
+  const [showDesignerMgr,setShowDesignerMgr]=useState(false);
   const [newName,setNewName]=useState("");
   const [newScope,setNewScope]=useState("");
   const [undoItem,setUndoItem]=useState(null);
@@ -661,6 +798,13 @@ function EblastPipeline({data, setData}){
   const cur=view[month]??1;
 
   function upd(cid,d){setData({...data,[month]:data[month].map(c=>c.clientId===cid?d:c)});}
+  // Called from Status Breakdown: update a single field on a single asset by id
+  function updAsset(assetId,clientId,field,value){
+    setData({...data,[month]:data[month].map(c=>{
+      if(c.clientId!==clientId) return c;
+      return {...c,eblasts:c.eblasts.map(e=>e.id===assetId?{...e,[field]:value}:e)};
+    })});
+  }
   function rem(cid){
     const client=raw.find(c=>c.clientId===cid);
     setData({...data,[month]:data[month].filter(c=>c.clientId!==cid)});
@@ -674,12 +818,14 @@ function EblastPipeline({data, setData}){
   const tot=raw.reduce((a,c)=>a+c.eblasts.length,0);
   const dep=raw.reduce((a,c)=>a+c.eblasts.filter(e=>e.status==="Deployed").length,0);
   const urgTotal=raw.reduce((a,c)=>a+c.eblasts.filter(e=>e.urgent).length,0);
+  const today0=new Date(); today0.setHours(0,0,0,0);
+  const overdueTotal=raw.reduce((a,c)=>a+c.eblasts.filter(e=>{const f=strToDate(e.friStr);return f&&f<today0&&e.deployDay&&!isAssetDone(e.status,e.assetType);}).length,0);
 
   // Sort: urgent clients first, then alpha if sorted
   let displayClients=[...raw];
   if(sorted) displayClients.sort((a,b)=>a.clientName.localeCompare(b.clientName));
   else displayClients.sort((a,b)=>(b.eblasts.some(e=>e.urgent)?1:0)-(a.eblasts.some(e=>e.urgent)?1:0));
-  if(search.trim()) displayClients=displayClients.filter(c=>c.clientName.toLowerCase().includes(search.toLowerCase())||c.eblasts.some(e=>e.name.toLowerCase().includes(search.toLowerCase())));
+  if(search.trim()) displayClients=displayClients.filter(c=>c.clientName.toLowerCase().includes(search.toLowerCase())||c.eblasts.some(e=>e.name.toLowerCase().includes(search.toLowerCase())||((e.assetType||"").toLowerCase().includes(search.toLowerCase()))));
 
   return (
     <div style={{display:"flex",height:"100%",minHeight:0,overflow:"hidden"}}>
@@ -688,12 +834,13 @@ function EblastPipeline({data, setData}){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,flexWrap:"wrap",gap:10}}>
           <div>
             <h2 style={{margin:0,fontSize:21,fontFamily:"'DM Serif Display',serif",color:"#1a1a2e"}}>{MONTHS[month]}</h2>
-            <p style={{margin:"3px 0 0",fontSize:12,color:"#9CA3AF"}}>{raw.length} clients · {tot} eblasts · {dep} deployed{urgTotal>0&&<span style={{marginLeft:8,color:"#BE123C",fontWeight:600}}>· 🚨 {urgTotal} urgent</span>}</p>
+            <p style={{margin:"3px 0 0",fontSize:12,color:"#9CA3AF"}}>{raw.length} clients · {tot} assets · {dep} deployed{urgTotal>0&&<span style={{marginLeft:8,color:"#BE123C",fontWeight:600}}>· 🚨 {urgTotal} urgent</span>}{overdueTotal>0&&<span style={{marginLeft:8,color:"#DC2626",fontWeight:600}}>· ⚠️ {overdueTotal} overdue</span>}</p>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-            <SearchBar value={search} onChange={setSearch} placeholder="Search clients or eblasts…"/>
+            <SearchBar value={search} onChange={setSearch} placeholder="Search clients, assets or types…"/>
             <AZBtn sorted={sorted} onToggle={()=>setSorted(v=>!v)}/>
             <button onClick={()=>setShowYearOverview(true)} style={{background:"#F0EEE9",border:"none",borderRadius:7,padding:"7px 13px",cursor:"pointer",fontSize:12,fontWeight:600,color:"#6B6860"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a2e";e.currentTarget.style.color="#fff";}} onMouseLeave={e=>{e.currentTarget.style.background="#F0EEE9";e.currentTarget.style.color="#6B6860";}}>📊 Year</button>
+            <button onClick={()=>setShowDesignerMgr(true)} style={{background:"#F0EEE9",border:"none",borderRadius:7,padding:"7px 13px",cursor:"pointer",fontSize:12,fontWeight:600,color:"#6B6860"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a2e";e.currentTarget.style.color="#fff";}} onMouseLeave={e=>{e.currentTarget.style.background="#F0EEE9";e.currentTarget.style.color="#6B6860";}}>⚙️ Designers</button>
             {cur===0&&<button onClick={()=>setShowAdd(v=>!v)} style={{background:"#1a1a2e",color:"#fff",border:"none",padding:"8px 15px",borderRadius:8,cursor:"pointer",fontSize:12.5,fontWeight:600,display:"flex",alignItems:"center",gap:5}}><span style={{fontSize:14}}>+</span> Add Client</button>}
           </div>
         </div>
@@ -708,12 +855,13 @@ function EblastPipeline({data, setData}){
             </div>
           </div>
         )}
-        {cur===0&&<div style={{display:"flex",flexDirection:"column",gap:9}}>{displayClients.map(c=><EbClientCard key={c.clientId} client={c} onUpdate={d=>upd(c.clientId,d)} onRemove={()=>rem(c.clientId)} monthIdx={month}/>)}{displayClients.length===0&&<EmptyMsg msg={search?`No results for "${search}".`:`No clients for ${MONTHS[month]}.`} onAdd={search?undefined:()=>setShowAdd(true)}/>}</div>}
-        {cur===1&&<EbStatusBreakdown clients={raw} monthIdx={month}/>}
-        {cur===2&&<EbDesignerView clients={raw}/>}
+        {cur===0&&<div style={{display:"flex",flexDirection:"column",gap:9}}>{displayClients.map(c=><EbClientCard key={c.clientId} client={c} onUpdate={d=>upd(c.clientId,d)} onRemove={()=>rem(c.clientId)} monthIdx={month} designers={designers}/>)}{displayClients.length===0&&<EmptyMsg msg={search?`No results for "${search}".`:`No clients for ${MONTHS[month]}.`} onAdd={search?undefined:()=>setShowAdd(true)}/>}</div>}
+        {cur===1&&<EbStatusBreakdown clients={raw} monthIdx={month} onUpdateAsset={updAsset}/>}
+        {cur===2&&<EbDesignerView clients={raw} designers={designers}/>}
       </div>
       {undoItem&&<UndoToast item={undoItem} onUndo={()=>{undoItem.restoreFn();setUndoItem(null);}} onDismiss={()=>setUndoItem(null)}/>}
       {showYearOverview&&<YearOverview data={data} onClose={()=>setShowYearOverview(false)}/>}
+      {showDesignerMgr&&<DesignerManager designers={designers} onSave={list=>{setDesigners(list);setShowDesignerMgr(false);}} onClose={()=>setShowDesignerMgr(false)}/>}
     </div>
   );
 }
@@ -1295,13 +1443,14 @@ function PostingSchedule({checks, setChecks}){
 }
 
 // ── App ────────────────────────────────────────────────────────────────────
-const TABS = ["Eblast Pipeline","Social Media Content Production","Posting Schedule"];
+const TABS = ["Digital Assets Pipeline","Social Media Content Production","Posting Schedule"];
 
 export default function App(){
   const [tab,setTab]=useState(0);
   const [ebData,setEbData]=useState(buildEbData);
   const [smData,setSmData]=useState(buildSmData);
   const [psChecks,setPsChecks]=useState({});
+  const [designers,setDesigners]=useState(["Eddy","Claus"]);
   const [syncStatus,setSyncStatus]=useState("idle"); // idle | saving | saved | error
   const [liveStatus,setLiveStatus]=useState("connecting"); // connecting | live | offline
   const [loading,setLoading]=useState(true);
@@ -1312,13 +1461,14 @@ export default function App(){
   useEffect(()=>{
     (async()=>{
       try{
-        const [eb,sm,ps]=await Promise.all([dbLoad("eblast_data"),dbLoad("sm_data"),dbLoad("ps_checks")]);
+        const [eb,sm,ps,ds]=await Promise.all([dbLoad("eblast_data"),dbLoad("sm_data"),dbLoad("ps_checks"),dbLoad("designers")]);
         // JSON storage converts integer keys to strings — convert them back
         function fixKeys(obj){ if(!obj) return null; const r={}; Object.entries(obj).forEach(([k,v])=>{r[isNaN(k)?k:parseInt(k)]=v;}); return r; }
         const fixedEb=fixKeys(eb); const fixedSm=fixKeys(sm);
         if(fixedEb&&Object.keys(fixedEb).length) setEbData(fixedEb);
         if(fixedSm&&Object.keys(fixedSm).length) setSmData(fixedSm);
         if(ps&&Object.keys(ps).length) setPsChecks(ps);
+        if(ds&&Array.isArray(ds)&&ds.length) setDesigners(ds);
       }catch(e){ console.error("Load error",e); }
       setLoading(false);
     })();
@@ -1337,6 +1487,7 @@ export default function App(){
           if(key==="eblast_data") setEbData(fixKeys(value));
           else if(key==="sm_data") setSmData(fixKeys(value));
           else if(key==="ps_checks") setPsChecks(value);
+          else if(key==="designers") setDesigners(value);
         }
       )
       .subscribe((status)=>{
@@ -1367,6 +1518,7 @@ export default function App(){
   },[]);
 
   function updateEbData(d){ setEbData(d); scheduleSave("eblast_data",d); }
+  function updateDesigners(d){ setDesigners(d); scheduleSave("designers",d); }
   function updateSmData(d){ setSmData(d); scheduleSave("sm_data",d); }
   function updatePsChecks(d){ setPsChecks(d); scheduleSave("ps_checks",d); }
 
@@ -1422,7 +1574,7 @@ export default function App(){
           {TABS.map((t,i)=><button key={t} onClick={()=>setTab(i)} style={{background:"none",border:"none",borderBottom:tab===i?"2.5px solid #1a1a2e":"2.5px solid transparent",padding:"12px 16px",cursor:"pointer",fontSize:12.5,fontFamily:"'DM Sans',sans-serif",fontWeight:tab===i?700:500,color:tab===i?"#1a1a2e":"#6B6860",marginBottom:-1,whiteSpace:"nowrap"}}>{t}</button>)}
         </div>
         <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
-          {tab===0&&<EblastPipeline data={ebData} setData={updateEbData}/>}
+          {tab===0&&<EblastPipeline data={ebData} setData={updateEbData} designers={designers} setDesigners={updateDesigners}/>}
           {tab===1&&<SocialMediaTab data={smData} setData={updateSmData}/>}
           {tab===2&&<PostingSchedule checks={psChecks} setChecks={updatePsChecks}/>}
         </div>
