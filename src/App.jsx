@@ -60,7 +60,7 @@ const SSC = {
 };
 
 
-const ASSET_TYPES = ["E-blast","Postcard","Invite","WhatsApp Piece","Flyer","Brochure"];
+const ASSET_TYPES = ["E-blast","Postcard","Invite","WhatsApp Piece","Flyer","Brochure","Deck"];
 const ASSET_TYPE_C = {
   "E-blast":       {bg:"#EEF2FF",text:"#4338CA",border:"#C7D2FE"},
   "Postcard":      {bg:"#FFF7ED",text:"#C2410C",border:"#FED7AA"},
@@ -68,6 +68,7 @@ const ASSET_TYPE_C = {
   "WhatsApp Piece":{bg:"#F0FDF4",text:"#15803D",border:"#86EFAC"},
   "Flyer":         {bg:"#FFFBEB",text:"#B45309",border:"#FDE68A"},
   "Brochure":      {bg:"#EFF6FF",text:"#1D4ED8",border:"#BFDBFE"},
+  "Deck":          {bg:"#FDF4FF",text:"#86198F",border:"#F0ABFC"},
 };
 
 const SCOPE_NUM = {"Per Request":null,"2 Eblasts/MO":2,"3 Eblasts/MO":3,"4 Eblasts/MO":4,"5 Eblasts/MO":5};
@@ -378,6 +379,415 @@ function DesignerManager({designers, onSave, onClose}){
           <button onClick={add} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:8,padding:"7px 14px",cursor:"pointer",fontSize:13,fontWeight:700}}>+</button>
         </div>
         <button onClick={()=>onSave(list)} style={{width:"100%",background:"#1a1a2e",color:"#fff",border:"none",borderRadius:10,padding:"10px",cursor:"pointer",fontSize:13.5,fontWeight:700,fontFamily:"'DM Sans',sans-serif"}}>Save</button>
+      </div>
+    </div>
+  );
+}
+
+
+// ── Report Generator ────────────────────────────────────────────────────────
+function generateReport(clients, month, designers){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const monthName = ["January","February","March","April","May","June","July","August","September","October","November","December"][month];
+  const generated = new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"});
+
+  const allAssets = [];
+  clients.forEach(c=>c.eblasts.forEach(e=>allAssets.push({...e,clientName:c.clientName})));
+
+  const tot = allAssets.length;
+  const dep = allAssets.filter(e=>e.status==="Deployed").length;
+  const overdue = allAssets.filter(e=>{const f=strToDate(e.friStr);return f&&f<today&&e.deployDay&&!isAssetDone(e.status,e.assetType);});
+  const urgent = allAssets.filter(e=>e.urgent);
+
+  // Group by status (skip Deployed for active view, show separately)
+  const active = STATUSES.filter(s=>s!=="Deployed");
+  const grouped = {};
+  STATUSES.forEach(s=>{grouped[s]=[];});
+  allAssets.forEach(e=>grouped[e.status].push(e));
+
+  // Designer counts
+  const dCounts = {};
+  designers.forEach(d=>{dCounts[d]={total:0,deployed:0};});
+  allAssets.forEach(e=>{if(dCounts[e.designer]){dCounts[e.designer].total++;if(e.status==="Deployed")dCounts[e.designer].deployed++;}});
+
+  const statusColors = {
+    "New Request":"#6366F1","Working on Brief":"#F97316","Working on Design":"#F59E0B",
+    "Under Norman's Review":"#22C55E","Under Gia's Review":"#14B8A6","Sent to Client":"#3B82F6",
+    "Changes Needed":"#F43F5E","Pending Client's Approval":"#FBBF24","Approved":"#16A34A",
+    "Ready to Deploy":"#10B981","Pending Last Week's Deployment":"#D97706","Deployed":"#8B5CF6",
+  };
+
+  function assetRow(e){
+    const friD = strToDate(e.friStr);
+    const isOvd = friD&&friD<today&&e.deployDay&&!isAssetDone(e.status,e.assetType);
+    const weekLabel = e.monStr&&e.friStr ? fmtWeekLabel(strToDate(e.monStr),strToDate(e.friStr)) : "—";
+    const deploy = e.deployDay ? ` · ${e.deployDay}` : "";
+    return `<tr style="border-bottom:1px solid #f0ede8;${isOvd?"background:#fff5f5":""}">
+      <td style="padding:7px 10px;font-size:12px;font-weight:600;color:#1a1a2e">${e.name||"<em style='color:#ccc'>Unnamed</em>"}</td>
+      <td style="padding:7px 10px;font-size:11px;color:#6b7280">${e.clientName}</td>
+      <td style="padding:7px 10px"><span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:#f5f3ff;color:#6d28d9">${weekLabel}${deploy}</span></td>
+      <td style="padding:7px 10px;font-size:11px;color:#6b7280">${e.designer||"—"}</td>
+      <td style="padding:7px 10px">${isOvd?'<span style="font-size:10px;font-weight:700;color:#dc2626;background:#fee2e2;padding:2px 8px;border-radius:20px">OVERDUE</span>':""}</td>
+    </tr>`;
+  }
+
+  function statusSection(status){
+    const items = grouped[status];
+    if(!items||!items.length) return "";
+    const color = statusColors[status]||"#9ca3af";
+    const rows = items.map(assetRow).join("");
+    return `
+      <div style="margin-bottom:20px;border-radius:10px;overflow:hidden;border:1px solid #e5e2dc;break-inside:avoid">
+        <div style="padding:10px 16px;background:${color}18;border-bottom:1px solid ${color}30;display:flex;align-items:center;gap:8px">
+          <span style="width:8px;height:8px;border-radius:50%;background:${color};display:inline-block"></span>
+          <span style="font-size:13px;font-weight:700;color:${color}">${status}</span>
+          <span style="font-size:11px;font-weight:700;color:${color};background:rgba(255,255,255,.6);border-radius:20px;padding:1px 10px;margin-left:auto">${items.length}</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:#fafaf9">
+            <th style="padding:6px 10px;font-size:9.5px;font-weight:800;color:#9ca3af;text-transform:uppercase;letter-spacing:.06em;text-align:left">Asset</th>
+            <th style="padding:6px 10px;font-size:9.5px;font-weight:800;color:#9ca3af;text-transform:uppercase;letter-spacing:.06em;text-align:left">Client</th>
+            <th style="padding:6px 10px;font-size:9.5px;font-weight:800;color:#9ca3af;text-transform:uppercase;letter-spacing:.06em;text-align:left">Week</th>
+            <th style="padding:6px 10px;font-size:9.5px;font-weight:800;color:#9ca3af;text-transform:uppercase;letter-spacing:.06em;text-align:left">Designer</th>
+            <th style="padding:6px 10px"></th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }
+
+  const overdueBlock = overdue.length ? `
+    <div style="margin-bottom:24px;border-radius:10px;border:1.5px solid #fca5a5;overflow:hidden;break-inside:avoid">
+      <div style="padding:10px 16px;background:#fff1f2;border-bottom:1px solid #fca5a5">
+        <span style="font-size:13px;font-weight:800;color:#dc2626">⚠️ Overdue (${overdue.length})</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <tbody>${overdue.map(e=>{
+          const daysOver=Math.floor((today-strToDate(e.friStr))/(1000*60*60*24));
+          return `<tr style="border-bottom:1px solid #fee2e2;background:#fff5f5">
+            <td style="padding:7px 10px;font-size:12px;font-weight:600;color:#dc2626">${e.name||"Unnamed"}</td>
+            <td style="padding:7px 10px;font-size:11px;color:#6b7280">${e.clientName}</td>
+            <td style="padding:7px 10px;font-size:11px;color:#dc2626;font-weight:700">${daysOver} day${daysOver!==1?"s":""} overdue</td>
+            <td style="padding:7px 10px;font-size:11px;color:#9ca3af">${e.status}</td>
+          </tr>`;
+        }).join("")}</tbody>
+      </table>
+    </div>` : "";
+
+  const designerBlock = `
+    <div style="margin-bottom:24px;display:flex;gap:12px;flex-wrap:wrap">
+      ${designers.map(d=>{
+        const dc=dCounts[d]||{total:0,deployed:0};
+        const pct=dc.total?Math.round((dc.deployed/dc.total)*100):0;
+        return `<div style="flex:1;min-width:140px;border:1px solid #e5e2dc;border-radius:10px;padding:14px 16px">
+          <div style="font-size:15px;font-weight:800;color:#1a1a2e;margin-bottom:4px">${d}</div>
+          <div style="font-size:11px;color:#9ca3af;margin-bottom:8px">${dc.total} assets · ${dc.deployed} deployed</div>
+          <div style="height:4px;background:#f0eee9;border-radius:2px;overflow:hidden">
+            <div style="width:${pct}%;height:100%;background:#8b5cf6;border-radius:2px"></div>
+          </div>
+          <div style="font-size:10px;color:#9ca3af;margin-top:4px">${pct}% deployed</div>
+        </div>`;
+      }).join("")}
+    </div>`;
+
+  const activeStatuses = active.filter(s=>grouped[s]&&grouped[s].length>0);
+  const deployedBlock = grouped["Deployed"]&&grouped["Deployed"].length ? statusSection("Deployed") : "";
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>YTL Creative — ${monthName} Report</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@400;500;600;700;800&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'DM Sans',sans-serif;background:#fff;color:#1a1a2e;padding:40px;max-width:900px;margin:0 auto;}
+  @media print{body{padding:20px;}@page{margin:15mm;}}
+</style>
+</head><body>
+  <!-- Header -->
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:28px;padding-bottom:20px;border-bottom:2px solid #1a1a2e">
+    <div>
+      <div style="font-family:'DM Serif Display',serif;font-size:26px;color:#1a1a2e;margin-bottom:2px">YTL CRE<em>ATIVE</em></div>
+      <div style="font-size:12px;color:#9ca3af;letter-spacing:.04em">Marketing Operations Board</div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-family:'DM Serif Display',serif;font-size:22px;color:#1a1a2e">${monthName} Report</div>
+      <div style="font-size:11px;color:#9ca3af;margin-top:2px">Generated ${generated}</div>
+    </div>
+  </div>
+
+  <!-- Summary stats -->
+  <div style="display:flex;gap:10px;margin-bottom:24px;flex-wrap:wrap">
+    ${[
+      {l:"Total Assets",v:tot,c:"#1a1a2e"},
+      {l:"Deployed",v:dep,c:"#8b5cf6"},
+      {l:"In Progress",v:tot-dep,c:"#6366F1"},
+      {l:"Overdue",v:overdue.length,c:overdue.length?"#dc2626":"#16a34a"},
+      {l:"Urgent",v:urgent.length,c:urgent.length?"#be123c":"#9ca3af"},
+    ].map(s=>`<div style="flex:1;min-width:100px;text-align:center;border:1px solid #e5e2dc;border-radius:10px;padding:12px 8px">
+      <div style="font-size:24px;font-weight:800;color:${s.c};font-family:'DM Serif Display',serif">${s.v}</div>
+      <div style="font-size:10px;color:#9ca3af;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-top:2px">${s.l}</div>
+    </div>`).join("")}
+  </div>
+
+  <!-- Overdue -->
+  ${overdueBlock}
+
+  <!-- Designer workload -->
+  <div style="font-size:10px;font-weight:800;color:#9ca3af;text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px">Designer Workload</div>
+  ${designerBlock}
+
+  <!-- Active pipeline -->
+  <div style="font-size:10px;font-weight:800;color:#9ca3af;text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px">Active Pipeline</div>
+  ${activeStatuses.map(statusSection).join("")}
+
+  <!-- Deployed -->
+  ${grouped["Deployed"]&&grouped["Deployed"].length?`<div style="font-size:10px;font-weight:800;color:#9ca3af;text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px;margin-top:8px">Deployed (${grouped["Deployed"].length})</div>${deployedBlock}`:""}
+
+  <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e2dc;font-size:10px;color:#c4bfba;text-align:center">
+    YTL Creative · Marketing Operations Board · ${generated}
+  </div>
+</body></html>`;
+
+  const win = window.open("","_blank");
+  win.document.write(html);
+  win.document.close();
+  setTimeout(()=>win.print(), 600);
+}
+
+
+const GIA_EMAIL = "Gianella@ytlcreative.com";
+const NORMAN_EMAIL = "norman@ytlcreative.com";
+
+function getWeekForDate(d, monthIdx){
+  const year = d.getFullYear();
+  const weeks = getMonthWeeks(monthIdx, year);
+  const ds = dateToStr(d);
+  for(let i=0;i<weeks.length;i++){
+    const wk = weeks[i];
+    const mon = dateToStr(wk.mon);
+    const fri = dateToStr(wk.fri);
+    if(ds >= mon && ds <= fri) return {wk, idx:i};
+  }
+  return {wk: weeks[weeks.length-1], idx: weeks.length-1};
+}
+
+function buildEmailBody(clients, reportType, weekInfo, monthName, designers){
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  const allAssets = [];
+  clients.forEach(c=>c.eblasts.forEach(e=>allAssets.push({...e,clientName:c.clientName})));
+
+  // Filter assets for the relevant scope
+  let scopeAssets = allAssets;
+  let periodLabel = "";
+
+  if(reportType === "weekly" && weekInfo){
+    const wkStr = dateToStr(weekInfo.mon);
+    scopeAssets = allAssets.filter(e=>e.monStr===wkStr);
+    periodLabel = `Week ${weekInfo.idx+1} · ${fmtWeekLabel(weekInfo.mon, weekInfo.fri)}`;
+  } else {
+    periodLabel = `${monthName} — Monthly Summary`;
+  }
+
+  // Group by status
+  const grouped = {};
+  STATUSES.forEach(s=>{grouped[s]=[];});
+  scopeAssets.forEach(e=>grouped[e.status].push(e));
+
+  const tot = scopeAssets.length;
+  const dep = scopeAssets.filter(e=>isAssetDone(e.status,e.assetType)).length;
+  const overdueAssets = scopeAssets.filter(e=>{
+    const f=strToDate(e.friStr);
+    return f&&f<today&&e.deployDay&&!isAssetDone(e.status,e.assetType);
+  });
+
+  // Designer counts
+  const dCounts = {};
+  designers.forEach(d=>{dCounts[d]={total:0,deployed:0};});
+  scopeAssets.forEach(e=>{
+    if(dCounts[e.designer]){
+      dCounts[e.designer].total++;
+      if(isAssetDone(e.status,e.assetType)) dCounts[e.designer].deployed++;
+    }
+  });
+
+  let body = `Dear Gia,
+
+`;
+  body += reportType==="weekly"
+    ? `Here's this week's pipeline update for ${periodLabel}.
+
+`
+    : `Here's the end-of-month summary for ${periodLabel}.
+
+`;
+
+  body += `OVERVIEW
+`;
+  body += `────────────────────────────────
+`;
+  body += `Total assets: ${tot}
+`;
+  body += `Completed: ${dep}
+`;
+  body += `In progress: ${tot-dep}
+`;
+  if(overdueAssets.length) body += `⚠️ Overdue: ${overdueAssets.length}
+`;
+  body += `
+`;
+
+  // Overdue section first — most urgent
+  if(overdueAssets.length){
+    body += `⚠️ OVERDUE (${overdueAssets.length})
+`;
+    body += `────────────────────────────────
+`;
+    overdueAssets.forEach(e=>{
+      const daysOver = Math.floor((today-strToDate(e.friStr))/(1000*60*60*24));
+      body += `• ${e.clientName} — ${e.name||"Unnamed"} [${e.assetType||"E-blast"}] — ${daysOver} day${daysOver!==1?"s":""} overdue — Currently: ${e.status}
+`;
+    });
+    body += `
+`;
+  }
+
+  // Status sections — skip empty ones
+  const activeSections = STATUSES.filter(s=>grouped[s]&&grouped[s].length>0);
+  activeSections.forEach(status=>{
+    const items = grouped[status];
+    body += `${status.toUpperCase()} (${items.length})
+`;
+    body += `────────────────────────────────
+`;
+    items.forEach(e=>{
+      const friD = strToDate(e.friStr);
+      const isOvd = friD&&friD<today&&e.deployDay&&!isAssetDone(e.status,e.assetType);
+      const weekLbl = e.monStr ? fmtWeekLabel(strToDate(e.monStr),strToDate(e.friStr)) : "No week set";
+      const deploy = e.deployDay ? ` · Deploy ${e.deployDay}` : "";
+      const urgFlag = e.urgent ? " 🚨 URGENT" : "";
+      const ovdFlag = isOvd ? " ⚠️ OVERDUE" : "";
+      body += `• ${e.clientName} — ${e.name||"Unnamed"} [${e.assetType||"E-blast"}] — ${weekLbl}${deploy} — ${e.designer}${urgFlag}${ovdFlag}
+`;
+    });
+    body += `
+`;
+  });
+
+  // Designer summary
+  body += `DESIGNER WORKLOAD
+`;
+  body += `────────────────────────────────
+`;
+  designers.forEach(d=>{
+    const dc = dCounts[d]||{total:0,deployed:0};
+    body += `${d}: ${dc.total} assets · ${dc.deployed} completed
+`;
+  });
+  body += `
+`;
+
+  body += `Best,
+Norman
+`;
+  body += `
+— Sent from YTL Creative Marketing Operations Board`;
+
+  return {body, periodLabel};
+}
+
+function sendEmailReport(clients, reportType, weekInfo, monthIdx, designers){
+  const monthName = MONTHS[monthIdx];
+  const {body, periodLabel} = buildEmailBody(clients, reportType, weekInfo, monthIdx, monthName, designers);
+  const subject = reportType==="weekly"
+    ? `YTL Creative — Pipeline Update · ${periodLabel}`
+    : `YTL Creative — ${monthName} Monthly Report`;
+  const mailto = `mailto:${GIA_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  window.open(mailto, "_blank");
+}
+
+
+function EmailReportModal({clients, month, designers, onClose}){
+  const today = new Date();
+  const monthWeeks = getMonthWeeks(month, today.getFullYear());
+  const {wk: currentWk, idx: currentWkIdx} = getWeekForDate(today, month);
+  const [reportType, setReportType] = useState("weekly");
+  const [selectedWkIdx, setSelectedWkIdx] = useState(currentWkIdx);
+
+  const weekInfo = reportType==="weekly" ? {...monthWeeks[selectedWkIdx], idx:selectedWkIdx} : null;
+
+  function send(){
+    sendEmailReport(clients, reportType, weekInfo, month, designers);
+    onClose();
+  }
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onClose}>
+      <div style={{background:"#fff",borderRadius:16,padding:"26px 30px",width:460,boxShadow:"0 20px 60px rgba(0,0,0,.2)",fontFamily:"'DM Sans',sans-serif"}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+          <h3 style={{margin:0,fontSize:17,fontFamily:"'DM Serif Display',serif",color:"#1a1a2e"}}>Email Report to Gia</h3>
+          <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#9CA3AF"}}>✕</button>
+        </div>
+
+        {/* To field */}
+        <div style={{marginBottom:16}}>
+          <label style={{display:"block",fontSize:10,fontWeight:800,color:"#9CA3AF",letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:5}}>To</label>
+          <div style={{background:"#FAFAF9",border:"1px solid #E5E2DC",borderRadius:8,padding:"9px 12px",fontSize:13,color:"#1a1a2e"}}>{GIA_EMAIL}</div>
+        </div>
+
+        {/* Report type */}
+        <div style={{marginBottom:16}}>
+          <label style={{display:"block",fontSize:10,fontWeight:800,color:"#9CA3AF",letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:8}}>Report Type</label>
+          <div style={{display:"flex",background:"#F0EEE9",borderRadius:10,padding:4}}>
+            {[["weekly","📋 Weekly Update"],["monthly","📊 Monthly Summary"]].map(([v,l])=>(
+              <button key={v} onClick={()=>setReportType(v)}
+                style={{flex:1,background:reportType===v?"#fff":"transparent",border:"none",borderRadius:7,padding:"8px 12px",cursor:"pointer",fontSize:12.5,fontWeight:reportType===v?700:500,color:reportType===v?"#1a1a2e":"#9CA3AF",boxShadow:reportType===v?"0 1px 4px rgba(0,0,0,.1)":"none",transition:"all .15s"}}>
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Week selector (only for weekly) */}
+        {reportType==="weekly"&&(
+          <div style={{marginBottom:16}}>
+            <label style={{display:"block",fontSize:10,fontWeight:800,color:"#9CA3AF",letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:8}}>Week</label>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {monthWeeks.map((wk,i)=>{
+                const isCurrent = i===currentWkIdx;
+                const sel = i===selectedWkIdx;
+                return (
+                  <button key={i} onClick={()=>setSelectedWkIdx(i)}
+                    style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderRadius:9,border:`1.5px solid ${sel?"#6366F1":"#E5E2DC"}`,background:sel?"#EEF2FF":"#FAFAF9",cursor:"pointer",textAlign:"left"}}>
+                    <span style={{fontSize:13,fontWeight:sel?700:500,color:sel?"#4338CA":"#374151"}}>
+                      Week {i+1} · {fmtWeekLabel(wk.mon, wk.fri)}
+                    </span>
+                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      {isCurrent&&<span style={{fontSize:10,fontWeight:700,background:"#6366F1",color:"#fff",borderRadius:20,padding:"1px 8px"}}>Current</span>}
+                      {sel&&<span style={{fontSize:12,color:"#6366F1"}}>✓</span>}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Preview subject */}
+        <div style={{marginBottom:20,background:"#F8F7F4",borderRadius:8,padding:"10px 14px",border:"1px solid #E5E2DC"}}>
+          <div style={{fontSize:9.5,fontWeight:800,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:4}}>Subject Preview</div>
+          <div style={{fontSize:12.5,color:"#1a1a2e",fontWeight:600}}>
+            {reportType==="weekly"
+              ? `YTL Creative — Pipeline Update · Week ${selectedWkIdx+1} · ${fmtWeekLabel(monthWeeks[selectedWkIdx].mon, monthWeeks[selectedWkIdx].fri)}`
+              : `YTL Creative — ${MONTHS[month]} Monthly Report`}
+          </div>
+        </div>
+
+        <button onClick={send}
+          style={{width:"100%",background:"#1a1a2e",color:"#E8E4DC",border:"none",borderRadius:10,padding:"12px",cursor:"pointer",fontSize:14,fontWeight:700,fontFamily:"'DM Sans',sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+          <span style={{fontSize:16}}>📧</span> Open in Mail App
+        </button>
+        <div style={{marginTop:8,textAlign:"center",fontSize:11,color:"#C4BFBA"}}>Opens your default mail app with the report pre-filled</div>
       </div>
     </div>
   );
@@ -791,6 +1201,8 @@ function EblastPipeline({data, setData, designers, setDesigners}){
   const [showAdd,setShowAdd]=useState(false);
   const [showYearOverview,setShowYearOverview]=useState(false);
   const [showDesignerMgr,setShowDesignerMgr]=useState(false);
+  const [isGenerating,setIsGenerating]=useState(false);
+  const [showEmailModal,setShowEmailModal]=useState(false);
   const [newName,setNewName]=useState("");
   const [newScope,setNewScope]=useState("");
   const [undoItem,setUndoItem]=useState(null);
@@ -841,6 +1253,8 @@ function EblastPipeline({data, setData, designers, setDesigners}){
             <AZBtn sorted={sorted} onToggle={()=>setSorted(v=>!v)}/>
             <button onClick={()=>setShowYearOverview(true)} style={{background:"#F0EEE9",border:"none",borderRadius:7,padding:"7px 13px",cursor:"pointer",fontSize:12,fontWeight:600,color:"#6B6860"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a2e";e.currentTarget.style.color="#fff";}} onMouseLeave={e=>{e.currentTarget.style.background="#F0EEE9";e.currentTarget.style.color="#6B6860";}}>📊 Year</button>
             <button onClick={()=>setShowDesignerMgr(true)} style={{background:"#F0EEE9",border:"none",borderRadius:7,padding:"7px 13px",cursor:"pointer",fontSize:12,fontWeight:600,color:"#6B6860"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a2e";e.currentTarget.style.color="#fff";}} onMouseLeave={e=>{e.currentTarget.style.background="#F0EEE9";e.currentTarget.style.color="#6B6860";}}>⚙️ Designers</button>
+            <button onClick={()=>{setIsGenerating(true);setTimeout(()=>{generateReport(raw,month,designers);setIsGenerating(false);},100);}} style={{background:"#1a1a2e",color:"#E8E4DC",border:"none",borderRadius:7,padding:"7px 13px",cursor:"pointer",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:5,opacity:isGenerating?0.6:1}}>{isGenerating?"Generating…":"📄 Report"}</button>
+            <button onClick={()=>setShowEmailModal(true)} style={{background:"#6366F1",color:"#fff",border:"none",borderRadius:7,padding:"7px 13px",cursor:"pointer",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:5}}>📧 Email Gia</button>
             {cur===0&&<button onClick={()=>setShowAdd(v=>!v)} style={{background:"#1a1a2e",color:"#fff",border:"none",padding:"8px 15px",borderRadius:8,cursor:"pointer",fontSize:12.5,fontWeight:600,display:"flex",alignItems:"center",gap:5}}><span style={{fontSize:14}}>+</span> Add Client</button>}
           </div>
         </div>
@@ -862,6 +1276,7 @@ function EblastPipeline({data, setData, designers, setDesigners}){
       {undoItem&&<UndoToast item={undoItem} onUndo={()=>{undoItem.restoreFn();setUndoItem(null);}} onDismiss={()=>setUndoItem(null)}/>}
       {showYearOverview&&<YearOverview data={data} onClose={()=>setShowYearOverview(false)}/>}
       {showDesignerMgr&&<DesignerManager designers={designers} onSave={list=>{setDesigners(list);setShowDesignerMgr(false);}} onClose={()=>setShowDesignerMgr(false)}/>}
+      {showEmailModal&&<EmailReportModal clients={raw} month={month} designers={designers} onClose={()=>setShowEmailModal(false)}/>}
     </div>
   );
 }
