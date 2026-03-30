@@ -386,7 +386,7 @@ function DesignerManager({designers, onSave, onClose}){
 
 
 // ── Report Generator ────────────────────────────────────────────────────────
-function generateReport(clients, month, designers){
+function generateReport(clients, month, designers, weekInfo){
   const today = new Date(); today.setHours(0,0,0,0);
   const monthName = ["January","February","March","April","May","June","July","August","September","October","November","December"][month];
   const generated = new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"});
@@ -394,21 +394,30 @@ function generateReport(clients, month, designers){
   const allAssets = [];
   clients.forEach(c=>c.eblasts.forEach(e=>allAssets.push({...e,clientName:c.clientName})));
 
-  const tot = allAssets.length;
-  const dep = allAssets.filter(e=>e.status==="Deployed").length;
-  const overdue = allAssets.filter(e=>{const f=strToDate(e.friStr);return f&&f<today&&e.deployDay&&!isAssetDone(e.status,e.assetType);});
-  const urgent = allAssets.filter(e=>e.urgent);
+  // Filter to week if provided
+  let scopeAssets = allAssets;
+  let reportPeriod = monthName + " — Monthly Report";
+  if(weekInfo){
+    const wkStr = dateToStr(weekInfo.mon);
+    scopeAssets = allAssets.filter(e=>e.monStr===wkStr);
+    reportPeriod = `Week ${weekInfo.idx+1} · ${fmtWeekLabel(weekInfo.mon, weekInfo.fri)}`;
+  }
 
-  // Group by status (skip Deployed for active view, show separately)
+  const tot = scopeAssets.length;
+  const dep = scopeAssets.filter(e=>isAssetDone(e.status,e.assetType)).length;
+  const overdue = scopeAssets.filter(e=>{const f=strToDate(e.friStr);return f&&f<today&&e.deployDay&&!isAssetDone(e.status,e.assetType);});
+  const urgent = scopeAssets.filter(e=>e.urgent);
+
+  // Group by status
   const active = STATUSES.filter(s=>s!=="Deployed");
   const grouped = {};
   STATUSES.forEach(s=>{grouped[s]=[];});
-  allAssets.forEach(e=>grouped[e.status].push(e));
+  scopeAssets.forEach(e=>grouped[e.status].push(e));
 
   // Designer counts
   const dCounts = {};
   designers.forEach(d=>{dCounts[d]={total:0,deployed:0};});
-  allAssets.forEach(e=>{if(dCounts[e.designer]){dCounts[e.designer].total++;if(e.status==="Deployed")dCounts[e.designer].deployed++;}});
+  scopeAssets.forEach(e=>{if(dCounts[e.designer]){dCounts[e.designer].total++;if(isAssetDone(e.status,e.assetType))dCounts[e.designer].deployed++;}});
 
   const statusColors = {
     "New Request":"#6366F1","Working on Brief":"#F97316","Working on Design":"#F59E0B",
@@ -495,7 +504,7 @@ function generateReport(clients, month, designers){
 
   const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
-<title>YTL Creative — ${monthName} Report</title>
+<title>YTL Creative — ${reportPeriod}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@400;500;600;700;800&display=swap');
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -510,7 +519,7 @@ function generateReport(clients, month, designers){
       <div style="font-size:12px;color:#9ca3af;letter-spacing:.04em">Marketing Operations Board</div>
     </div>
     <div style="text-align:right">
-      <div style="font-family:'DM Serif Display',serif;font-size:22px;color:#1a1a2e">${monthName} Report</div>
+      <div style="font-family:'DM Serif Display',serif;font-size:22px;color:#1a1a2e">${reportPeriod}</div>
       <div style="font-size:11px;color:#9ca3af;margin-top:2px">Generated ${generated}</div>
     </div>
   </div>
@@ -702,21 +711,23 @@ function sendEmailReport(clients, reportType, weekInfo, monthIdx, designers){
   const subject = reportType==="weekly"
     ? `YTL Creative — Pipeline Update · ${periodLabel}`
     : `YTL Creative — ${monthName} Monthly Report`;
-  const encoded = encodeURIComponent(body);
-  const mailto = `mailto:${GIA_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encoded}`;
-  // mailto links over ~8000 chars fail silently in many browsers
-  // Use location.href which is more reliable for mail clients
-  if(mailto.length < 8000){
-    window.location.href = mailto;
-  } else {
-    // Body too long — truncate to first 6000 chars of encoded body
-    const shortBody = body.substring(0, 2000) + "\n\n[Report truncated — open the full PDF report for complete details]";
-    window.location.href = `mailto:${GIA_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(shortBody)}`;
-  }
+  // Trim body if too long — mailto silently fails above ~2000 chars on most clients
+  const MAX = 1800;
+  const finalBody = body.length > MAX
+    ? body.substring(0, MAX) + "\n\n[Full report truncated. See attached PDF for complete details.]"
+    : body;
+  const mailto = `mailto:${GIA_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(finalBody)}`;
+  // Hidden anchor click is the most reliable cross-browser mailto trigger
+  const a = document.createElement("a");
+  a.href = mailto;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>document.body.removeChild(a), 200);
 }
 
 
-function EmailReportModal({clients, month, designers, onClose}){
+function ReportModal({clients, month, designers, onClose}){
   const today = new Date();
   const monthWeeks = getMonthWeeks(month, today.getFullYear());
   const {wk: currentWk, idx: currentWkIdx} = getWeekForDate(today, month);
@@ -792,11 +803,18 @@ function EmailReportModal({clients, month, designers, onClose}){
           </div>
         </div>
 
-        <button onClick={send}
-          style={{width:"100%",background:"#1a1a2e",color:"#E8E4DC",border:"none",borderRadius:10,padding:"12px",cursor:"pointer",fontSize:14,fontWeight:700,fontFamily:"'DM Sans',sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-          <span style={{fontSize:16}}>📧</span> Open in Mail App
-        </button>
-        <div style={{marginTop:8,textAlign:"center",fontSize:11,color:"#C4BFBA"}}>Opens your default mail app with the report pre-filled</div>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={()=>{
+            const wkInfo = reportType==="weekly" ? {...monthWeeks[selectedWkIdx], idx:selectedWkIdx} : null;
+            generateReport(clients, month, designers, wkInfo);
+          }} style={{flex:1,background:"#F0EEE9",color:"#1a1a2e",border:"1px solid #E5E2DC",borderRadius:10,padding:"11px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"'DM Sans',sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:7}}>
+            <span style={{fontSize:15}}>📄</span> PDF Report
+          </button>
+          <button onClick={send} style={{flex:1,background:"#1a1a2e",color:"#E8E4DC",border:"none",borderRadius:10,padding:"11px",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"'DM Sans',sans-serif",display:"flex",alignItems:"center",justifyContent:"center",gap:7}}>
+            <span style={{fontSize:15}}>📧</span> Email Gia
+          </button>
+        </div>
+        <div style={{marginTop:8,textAlign:"center",fontSize:11,color:"#C4BFBA"}}>PDF opens print dialog · Email opens your mail app</div>
       </div>
     </div>
   );
@@ -1210,7 +1228,6 @@ function EblastPipeline({data, setData, designers, setDesigners}){
   const [showAdd,setShowAdd]=useState(false);
   const [showYearOverview,setShowYearOverview]=useState(false);
   const [showDesignerMgr,setShowDesignerMgr]=useState(false);
-  const [isGenerating,setIsGenerating]=useState(false);
   const [showEmailModal,setShowEmailModal]=useState(false);
   const [newName,setNewName]=useState("");
   const [newScope,setNewScope]=useState("");
@@ -1262,8 +1279,7 @@ function EblastPipeline({data, setData, designers, setDesigners}){
             <AZBtn sorted={sorted} onToggle={()=>setSorted(v=>!v)}/>
             <button onClick={()=>setShowYearOverview(true)} style={{background:"#F0EEE9",border:"none",borderRadius:7,padding:"7px 13px",cursor:"pointer",fontSize:12,fontWeight:600,color:"#6B6860"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a2e";e.currentTarget.style.color="#fff";}} onMouseLeave={e=>{e.currentTarget.style.background="#F0EEE9";e.currentTarget.style.color="#6B6860";}}>📊 Year</button>
             <button onClick={()=>setShowDesignerMgr(true)} style={{background:"#F0EEE9",border:"none",borderRadius:7,padding:"7px 13px",cursor:"pointer",fontSize:12,fontWeight:600,color:"#6B6860"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a2e";e.currentTarget.style.color="#fff";}} onMouseLeave={e=>{e.currentTarget.style.background="#F0EEE9";e.currentTarget.style.color="#6B6860";}}>⚙️ Designers</button>
-            <button onClick={()=>{setIsGenerating(true);setTimeout(()=>{generateReport(raw,month,designers);setIsGenerating(false);},100);}} style={{background:"#1a1a2e",color:"#E8E4DC",border:"none",borderRadius:7,padding:"7px 13px",cursor:"pointer",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:5,opacity:isGenerating?0.6:1}}>{isGenerating?"Generating…":"📄 Report"}</button>
-            <button onClick={()=>setShowEmailModal(true)} style={{background:"#6366F1",color:"#fff",border:"none",borderRadius:7,padding:"7px 13px",cursor:"pointer",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:5}}>📧 Email Gia</button>
+            <button onClick={()=>setShowEmailModal(true)} style={{background:"#6366F1",color:"#fff",border:"none",borderRadius:7,padding:"7px 13px",cursor:"pointer",fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:5}}>📋 Reports</button>
             {cur===0&&<button onClick={()=>setShowAdd(v=>!v)} style={{background:"#1a1a2e",color:"#fff",border:"none",padding:"8px 15px",borderRadius:8,cursor:"pointer",fontSize:12.5,fontWeight:600,display:"flex",alignItems:"center",gap:5}}><span style={{fontSize:14}}>+</span> Add Client</button>}
           </div>
         </div>
@@ -1285,7 +1301,7 @@ function EblastPipeline({data, setData, designers, setDesigners}){
       {undoItem&&<UndoToast item={undoItem} onUndo={()=>{undoItem.restoreFn();setUndoItem(null);}} onDismiss={()=>setUndoItem(null)}/>}
       {showYearOverview&&<YearOverview data={data} onClose={()=>setShowYearOverview(false)}/>}
       {showDesignerMgr&&<DesignerManager designers={designers} onSave={list=>{setDesigners(list);setShowDesignerMgr(false);}} onClose={()=>setShowDesignerMgr(false)}/>}
-      {showEmailModal&&<EmailReportModal clients={raw} month={month} designers={designers} onClose={()=>setShowEmailModal(false)}/>}
+      {showEmailModal&&<ReportModal clients={raw} month={month} designers={designers} onClose={()=>setShowEmailModal(false)}/>}
     </div>
   );
 }
