@@ -161,13 +161,17 @@ function statusesForType(assetType){
 function getMonthWeeks(monthIdx, year){
   const yr = year || new Date().getFullYear();
   const weeks = [];
-  let d = new Date(yr, monthIdx, 1);
-  // Find first Monday
-  while(d.getDay() !== 1) d = new Date(d.getFullYear(), d.getMonth(), d.getDate()+1);
+  // Find the Monday of the week containing the 1st of the month
+  // (may be in the previous month — e.g. Apr 1 is Wed, so week starts Mar 30)
+  const first = new Date(yr, monthIdx, 1);
+  const dow = first.getDay(); // 0=Sun,1=Mon,...,6=Sat
+  const daysBack = dow === 0 ? 6 : dow - 1; // how many days back to Monday
+  let d = new Date(yr, monthIdx, 1 - daysBack);
   for(let w=0; w<4; w++){
-    const mon = new Date(d); 
+    const mon = new Date(d);
     const fri = new Date(d.getFullYear(), d.getMonth(), d.getDate()+4);
-    weeks.push({ mon, fri, thu: new Date(d.getFullYear(), d.getMonth(), d.getDate()+3) });
+    const thu = new Date(d.getFullYear(), d.getMonth(), d.getDate()+3);
+    weeks.push({ mon, fri, thu });
     d = new Date(d.getFullYear(), d.getMonth(), d.getDate()+7);
   }
   return weeks;
