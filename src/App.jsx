@@ -306,7 +306,19 @@ function WeekPicker({monStr, friStr, deployDay, monthIdx, openId, pickerId, setO
       </div>
       {isOpen&&(
         <div style={{position:"fixed",zIndex:9999,background:"#fff",borderRadius:12,border:"1px solid #E5E2DC",boxShadow:"0 8px 32px rgba(0,0,0,.15)",padding:"14px 16px",width:268,fontFamily:"'DM Sans',sans-serif"}}
-          ref={el=>{if(el){const r=el.previousSibling?.getBoundingClientRect?.();if(r){el.style.top=(r.bottom+6)+"px";el.style.left=r.left+"px";}}}}>
+          ref={el=>{if(el){const r=el.previousSibling?.getBoundingClientRect?.();if(r){
+            const calH=el.offsetHeight||480;
+            const spaceBelow=window.innerHeight-(r.bottom+6);
+            if(spaceBelow<calH&&r.top>calH){
+              el.style.top=(r.top-calH-6)+"px"; // flip above
+            } else {
+              el.style.top=(r.bottom+6)+"px"; // default below
+            }
+            // keep within horizontal bounds
+            const calW=268;
+            const leftPos=Math.min(r.left, window.innerWidth-calW-8);
+            el.style.left=Math.max(8,leftPos)+"px";
+          }}}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
             <button onClick={()=>setCalMonth(d=>new Date(d.getFullYear(),d.getMonth()-1,1))} style={{background:"none",border:"none",cursor:"pointer",fontSize:15,color:"#6B7280",padding:"2px 6px"}}>‹</button>
             <span style={{fontSize:12.5,fontWeight:700,color:"#1a1a2e"}}>{calMonth.toLocaleDateString("en-US",{month:"long",year:"numeric"})}</span>
@@ -1083,12 +1095,13 @@ function EbStatusBreakdown({clients, monthIdx, onUpdateAsset}){
 function EbDesignerView({clients, designers}){
   const counts = useMemo(()=>{
     const m={};
-    designers.forEach(d=>{ m[d]={total:0,urgent:0,deployed:0,byStatus:{}}; STATUSES.forEach(s=>m[d].byStatus[s]=0); });
+    designers.forEach(d=>{ m[d]={total:0,urgent:0,done:0,inProgress:0,byStatus:{}}; STATUSES.forEach(s=>m[d].byStatus[s]=0); });
     clients.forEach(c=>c.eblasts.forEach(e=>{
       if(!m[e.designer]) return;
       m[e.designer].total++;
       if(e.urgent) m[e.designer].urgent++;
-      if(e.status==="Deployed") m[e.designer].deployed++;
+      if(isAssetDone(e.status,e.assetType)) m[e.designer].done++;
+      else m[e.designer].inProgress++;
       m[e.designer].byStatus[e.status]++;
     }));
     return m;
@@ -1109,7 +1122,7 @@ function EbDesignerView({clients, designers}){
                 <div style={{width:pct+"%",height:"100%",background:"#6366F1",borderRadius:3,transition:"width .3s"}}/>
               </div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                {[{l:"Deployed",v:dc.deployed,c:"#16A34A"},{l:"Urgent",v:dc.urgent,c:"#F43F5E"},{l:"In Progress",v:dc.total-dc.deployed,c:"#F59E0B"}].map(s=>(
+                {[{l:"Done",v:dc.done,c:"#16A34A"},{l:"In Progress",v:dc.inProgress,c:"#6366F1"},{l:"Urgent",v:dc.urgent,c:"#F43F5E"}].map(s=>(
                   <div key={s.l} style={{flex:1,textAlign:"center",background:"#FAFAF9",borderRadius:8,padding:"7px 4px"}}>
                     <div style={{fontSize:16,fontWeight:700,color:s.c}}>{s.v}</div>
                     <div style={{fontSize:9.5,color:"#9CA3AF",fontWeight:600,marginTop:1,textTransform:"uppercase",letterSpacing:"0.06em"}}>{s.l}</div>
@@ -1330,7 +1343,13 @@ function DateRangePicker({startDate, endDate, onUpdate, openId, batchId, setOpen
 
   function openCal(e){
     const rect = e.currentTarget.getBoundingClientRect();
-    setPos({top: rect.bottom + 6, left: rect.left});
+    const calH = 420; // approx calendar height
+    const spaceBelow = window.innerHeight - (rect.bottom + 6);
+    const top = spaceBelow < calH && rect.top > calH
+      ? rect.top - calH - 6
+      : rect.bottom + 6;
+    const left = Math.min(Math.max(8, rect.left), window.innerWidth - 280);
+    setPos({top, left});
     setOpenId(isOpen ? null : batchId);
   }
 
