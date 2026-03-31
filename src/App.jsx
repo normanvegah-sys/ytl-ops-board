@@ -1918,7 +1918,8 @@ export default function App(){
   const [liveStatus,setLiveStatus]=useState("connecting"); // connecting | live | offline
   const [loading,setLoading]=useState(true);
   const saveTimer=useRef(null);
-  const isSaving=useRef(false); // flag to ignore our own realtime echoes
+  const isSaving=useRef(false);   // true while the actual HTTP save is in flight
+  const pendingSave=useRef(false); // true from first keystroke until save completes
 
   // ── Load on mount ─────────────────────────────────────────────────────────
   useEffect(()=>{
@@ -1927,7 +1928,17 @@ export default function App(){
         const [eb,sm,ps,ds]=await Promise.all([dbLoad("eblast_data"),dbLoad("sm_data"),dbLoad("ps_checks"),dbLoad("designers")]);
         // JSON storage converts integer keys to strings — convert them back
         function fixKeys(obj){ if(!obj) return null; const r={}; Object.entries(obj).forEach(([k,v])=>{r[isNaN(k)?k:parseInt(k)]=v;}); return r; }
-        const fixedEb=fixKeys(eb); const fixedSm=fixKeys(sm);
+        // Deduplicate clients by clientId (guards against any double-save corruption)
+        function dedupe(monthData){
+          if(!monthData) return monthData;
+          const result={};
+          Object.entries(monthData).forEach(([k,clients])=>{
+            const seen=new Set();
+            result[k]=clients.filter(c=>{ if(seen.has(c.clientId)) return false; seen.add(c.clientId); return true; });
+          });
+          return result;
+        }
+        const fixedEb=dedupe(fixKeys(eb)); const fixedSm=dedupe(fixKeys(sm));
         if(fixedEb&&Object.keys(fixedEb).length) setEbData(fixedEb);
         if(fixedSm&&Object.keys(fixedSm).length) setSmData(fixedSm);
         if(ps&&Object.keys(ps).length) setPsChecks(ps);
@@ -1944,11 +1955,12 @@ export default function App(){
       .on("postgres_changes",{event:"UPDATE",schema:"public",table:"board_state"},
         (payload)=>{
           // Ignore echoes from our own saves
-          if(isSaving.current) return;
+          if(isSaving.current||pendingSave.current) return;
           const {key, value} = payload.new;
           function fixKeys(obj){ if(!obj) return obj; const r={}; Object.entries(obj).forEach(([k,v])=>{r[isNaN(k)?k:parseInt(k)]=v;}); return r; }
-          if(key==="eblast_data") setEbData(fixKeys(value));
-          else if(key==="sm_data") setSmData(fixKeys(value));
+          function dedupeRT(obj){ if(!obj) return obj; const r={}; Object.entries(obj).forEach(([k,clients])=>{ const seen=new Set(); r[k]=clients.filter(c=>{if(seen.has(c.clientId))return false;seen.add(c.clientId);return true;}); }); return r; }
+          if(key==="eblast_data") setEbData(dedupeRT(fixKeys(value)));
+          else if(key==="sm_data") setSmData(dedupeRT(fixKeys(value)));
           else if(key==="ps_checks") setPsChecks(value);
           else if(key==="designers") setDesigners(value);
         }
@@ -1964,20 +1976,23 @@ export default function App(){
   // ── Debounced save (saves immediately for multi-user responsiveness) ──────
   const scheduleSave = useCallback((key,value)=>{
     setSyncStatus("saving");
+    pendingSave.current=true; // block realtime from overwriting local edits
     if(saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current=setTimeout(async()=>{
       try{
         isSaving.current=true;
         await dbSave(key,value);
         isSaving.current=false;
+        pendingSave.current=false; // safe to receive realtime again
         setSyncStatus("saved");
         setTimeout(()=>setSyncStatus("idle"),2000);
       }catch(e){
         isSaving.current=false;
+        pendingSave.current=false;
         setSyncStatus("error");
         console.error("Save error",e);
       }
-    },600); // faster for multi-user — 600ms debounce
+    },800);
   },[]);
 
   function updateEbData(d){ setEbData(d); scheduleSave("eblast_data",d); }
