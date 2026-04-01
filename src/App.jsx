@@ -947,7 +947,19 @@ function StatusGroupCard({status, items, today, onUpdateAsset}){
                 {item.monStr
                   ?<span style={{fontSize:10,fontWeight:700,color:"#6D28D9",background:"#F5F3FF",borderRadius:5,padding:"2px 7px",whiteSpace:"nowrap"}}>{fmtWeekLabel(strToDate(item.monStr),strToDate(item.friStr))}{item.deployDay?" · "+item.deployDay:""}</span>
                   :<span style={{fontSize:10,color:"#C4BFBA",background:"#F8F7F4",borderRadius:5,padding:"2px 7px"}}>No week</span>}
-                <div style={{flex:1,minWidth:80}}><span style={{fontSize:12.5,fontWeight:600,color:"#1a1a2e"}}>{item.name||<span style={{color:"#C4BFBA",fontStyle:"italic"}}>Unnamed</span>}</span></div>
+                <div style={{flex:1,minWidth:80}} onClick={e=>e.stopPropagation()}>
+                  {onUpdateAsset
+                    ? <input
+                        value={item.name||""}
+                        onChange={e=>onUpdateAsset(item.id,item.clientId,"name",e.target.value)}
+                        placeholder="Asset name..."
+                        style={{width:"100%",border:"none",background:"transparent",fontSize:12.5,fontWeight:600,color:"#1a1a2e",fontFamily:"'DM Sans',sans-serif",outline:"none",padding:0,cursor:"text"}}
+                        onFocus={e=>e.target.style.borderBottom="1.5px solid #6366F1"}
+                        onBlur={e=>e.target.style.borderBottom="none"}
+                      />
+                    : <span style={{fontSize:12.5,fontWeight:600,color:"#1a1a2e"}}>{item.name||<span style={{color:"#C4BFBA",fontStyle:"italic"}}>Unnamed</span>}</span>
+                  }
+                </div>
                 <span style={{fontSize:11,color:"#9CA3AF",whiteSpace:"nowrap"}}>{item.clientName}</span>
                 <span style={{fontSize:10.5,fontWeight:600,color:"#9CA3AF",background:"#F0EEE9",borderRadius:5,padding:"2px 6px"}}>{item.designer}</span>
                 {overdue&&<span style={{fontSize:10,fontWeight:700,color:"#DC2626",background:"#FEE2E2",borderRadius:20,padding:"1px 8px"}}>OVERDUE</span>}
@@ -1768,6 +1780,14 @@ function buildChecks(dateStr){
 }
 
 function fmtDateKey(d){ return d.toISOString().slice(0,10); }
+// Returns the Monday of the week containing date d, as YYYY-MM-DD string
+// This is the key for weekly checkbox storage
+function getWeekKey(d){
+  const dow = d.getDay(); // 0=Sun, 1=Mon ... 6=Sat
+  const daysBack = dow===0 ? 6 : dow-1; // back to Monday
+  const mon = new Date(d.getFullYear(), d.getMonth(), d.getDate()-daysBack);
+  return fmtDateKey(mon);
+}
 
 function PostingSchedule({checks, setChecks}){
   const today = new Date();
@@ -1776,18 +1796,22 @@ function PostingSchedule({checks, setChecks}){
   const [showCal, setShowCal] = useState(false);
   const [calMonth, setCalMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
 
-  const dateKey = fmtDateKey(selDate);
-  const dayChecks = checks[dateKey] || buildChecks(dateKey);
+  const weekKey = getWeekKey(selDate);
+  const dayChecks = checks[weekKey] || buildChecks(weekKey);
 
   function toggle(clientId, day){
-    const cur = checks[dateKey] || buildChecks(dateKey);
-    const next = {...checks, [dateKey]: {...cur, [clientId]: {...cur[clientId], [day]: !cur[clientId][day]}}};
+    const cur = checks[weekKey] || buildChecks(weekKey);
+    const next = {...checks, [weekKey]: {...cur, [clientId]: {...cur[clientId], [day]: !cur[clientId][day]}}};
     setChecks(next);
   }
 
-  const dow = selDate.getDay(); // 0=Sun,1=Mon,3=Wed,5=Fri
+  const dow = selDate.getDay();
   const isPostingDay = dow===1||dow===3||dow===5;
   const dayName = selDate.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"});
+  // Week range label for the selected date's week
+  const wkMonDate = new Date(selDate.getFullYear(),selDate.getMonth(),selDate.getDate()-(dow===0?6:dow-1));
+  const wkFriDate = new Date(wkMonDate.getFullYear(),wkMonDate.getMonth(),wkMonDate.getDate()+4);
+  const weekLabel = wkMonDate.toLocaleDateString("en-US",{month:"short",day:"numeric"})+" – "+wkFriDate.toLocaleDateString("en-US",{month:"short",day:"numeric"});
 
   // Sort helpers
   // Calendar helpers
@@ -1855,11 +1879,13 @@ function PostingSchedule({checks, setChecks}){
       </div>
 
       {/* Day context banner */}
-      <div style={{marginBottom:18,padding:"10px 16px",borderRadius:9,border:`1px solid ${isPostingDay?"#BBF7D0":"#FDE68A"}`,background:isPostingDay?"#F0FDF4":"#FFFBEB",display:"flex",alignItems:"center",gap:8}}>
-        <span style={{fontSize:14}}>{isPostingDay?"✅":"⚠️"}</span>
-        <span style={{fontSize:12.5,fontFamily:"'DM Sans',sans-serif",color:isPostingDay?"#15803D":"#92400E"}}>
-          <strong>Viewing schedule for {dayName}.</strong>{" "}
-          {isPostingDay?"This is a posting day.":"No posting on this day — posts go out Monday, Wednesday & Friday only."}
+      <div style={{marginBottom:18,padding:"10px 16px",borderRadius:9,border:"1px solid #C7D2FE",background:"#EEF2FF",display:"flex",alignItems:"center",gap:8}}>
+        <span style={{fontSize:14}}>📅</span>
+        <span style={{fontSize:12.5,fontFamily:"'DM Sans',sans-serif",color:"#4338CA"}}>
+          <strong>Week of {weekLabel}</strong>{" — "}
+          {isPostingDay
+            ? <span>Viewing from <strong>{selDate.toLocaleDateString("en-US",{weekday:"long"})}</strong>. Checks apply to the whole week.</span>
+            : <span style={{color:"#92400E"}}>No posting on {selDate.toLocaleDateString("en-US",{weekday:"long"})} — but you can still view and update this week's schedule.</span>}
         </span>
       </div>
 
@@ -1872,7 +1898,7 @@ function PostingSchedule({checks, setChecks}){
         const DAY_LABELS={mon:"Mon",tue:"Tue",wed:"Wed",thu:"Thu",fri:"Fri"};
         const history=Object.entries(checks)
           .map(([dk,dc])=>({dk,anyChecked:Object.values(dc).some(d=>Object.values(d).some(Boolean)),dc}))
-          .filter(({anyChecked,dk})=>anyChecked&&dk!==fmtDateKey(selDate))
+          .filter(({anyChecked,dk})=>anyChecked&&dk!==weekKey)
           .sort((a,b)=>b.dk.localeCompare(a.dk))
           .slice(0,30);
         if(!history.length) return null;
@@ -1881,8 +1907,9 @@ function PostingSchedule({checks, setChecks}){
             <div style={{fontSize:11,fontWeight:800,color:"#9CA3AF",letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:10}}>Posting History</div>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               {history.map(({dk,dc})=>{
-                const d=new Date(dk+"T12:00:00");
-                const label=d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+                const monD=new Date(dk+"T12:00:00");
+                const friD=new Date(monD.getFullYear(),monD.getMonth(),monD.getDate()+4);
+                const label="Week of "+monD.toLocaleDateString("en-US",{month:"short",day:"numeric"})+" – "+friD.toLocaleDateString("en-US",{month:"short",day:"numeric"});
                 const allClients=[...PS_REGULAR,...PS_PER_REQUEST];
                 const checked=allClients.filter(cl=>allDays.some(day=>dc[cl.id]?.[day]));
                 return (
