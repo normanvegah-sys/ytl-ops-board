@@ -80,6 +80,35 @@ const SCOPE_C   = {
   "5 Eblasts/MO": {bg:"#F5F3FF",text:"#7C3AED"},
 };
 
+
+// ── Client Registry ────────────────────────────────────────────────────────
+// Single source of truth for all clients across all tabs.
+// Each client: { id, name, type, scope, services:{email,social},
+//                postingType:"regular"|"per-request",
+//                postingFlags:{noFriday,stories} }
+const DEFAULT_REGISTRY = [
+  {id:"r-susan",   name:"Susan Trevisa",       type:"agent",     scope:"4 Eblasts/MO", services:{email:true,  social:true},  postingType:"regular",     postingFlags:{noFriday:true,  stories:false}},
+  {id:"r-madelyn", name:"Madelyn Mejia",        type:"agent",     scope:"3 Eblasts/MO", services:{email:true,  social:false}, postingType:"regular",     postingFlags:{noFriday:false, stories:false}},
+  {id:"r-vis",     name:"Visconti",             type:"agent",     scope:"2 Eblasts/MO", services:{email:true,  social:true},  postingType:"per-request", postingFlags:{noFriday:false, stories:false}},
+  {id:"r-tlg",     name:"The Light Group",      type:"agent",     scope:"4 Eblasts/MO", services:{email:true,  social:true},  postingType:"regular",     postingFlags:{noFriday:false, stories:false}},
+  {id:"r-dean",    name:"Dean Bloch",           type:"agent",     scope:"4 Eblasts/MO", services:{email:true,  social:true},  postingType:"regular",     postingFlags:{noFriday:false, stories:true}},
+  {id:"r-pietro",  name:"Pietro Belmonte",      type:"agent",     scope:"5 Eblasts/MO", services:{email:true,  social:true},  postingType:"regular",     postingFlags:{noFriday:true,  stories:false}},
+  {id:"r-edge",    name:"Edge House Miami",     type:"developer", scope:"4 Eblasts/MO", services:{email:true,  social:false}, postingType:"regular",     postingFlags:{noFriday:false, stories:false}},
+  {id:"r-chanel",  name:"Chanel Hunter Milian", type:"agent",     scope:"Per Request",  services:{email:true,  social:false}, postingType:"regular",     postingFlags:{noFriday:false, stories:false}},
+  {id:"r-joe",     name:"Joe Schafer",          type:"agent",     scope:"4 Eblasts/MO", services:{email:true,  social:false}, postingType:"regular",     postingFlags:{noFriday:false, stories:false}},
+  {id:"r-shawn",   name:"Shawn Clarke",         type:"agent",     scope:"4 Eblasts/MO", services:{email:true,  social:true},  postingType:"regular",     postingFlags:{noFriday:false, stories:false}},
+  {id:"r-river",   name:"River District 14",    type:"developer", scope:"4 Eblasts/MO", services:{email:true,  social:false}, postingType:"regular",     postingFlags:{noFriday:false, stories:false}},
+  {id:"r-vsg",     name:"Vecchi Stoka",         type:"agent",     scope:"2 Eblasts/MO", services:{email:true,  social:true},  postingType:"regular",     postingFlags:{noFriday:true,  stories:false}},
+  {id:"r-paul",    name:"Paul Basile",          type:"agent",     scope:"3 Eblasts/MO", services:{email:true,  social:true},  postingType:"regular",     postingFlags:{noFriday:false, stories:false}},
+  {id:"r-daniel",  name:"Daniel Novela",        type:"agent",     scope:"Per Request",  services:{email:true,  social:false}, postingType:"regular",     postingFlags:{noFriday:false, stories:false}},
+  {id:"r-joseph",  name:"Joseph",               type:"agent",     scope:"Per Request",  services:{email:false, social:true},  postingType:"regular",     postingFlags:{noFriday:false, stories:false}},
+  {id:"r-kane",    name:"Kane",                 type:"agent",     scope:"Per Request",  services:{email:false, social:true},  postingType:"per-request", postingFlags:{noFriday:false, stories:false}},
+  {id:"r-trc",     name:"TRC",                  type:"agent",     scope:"Per Request",  services:{email:false, social:true},  postingType:"regular",     postingFlags:{noFriday:false, stories:false}},
+  {id:"r-72c",     name:"72 Carlyle",           type:"developer", scope:"Per Request",  services:{email:false, social:true},  postingType:"regular",     postingFlags:{noFriday:false, stories:false}},
+  {id:"r-rd14",    name:"RD14",                 type:"developer", scope:"Per Request",  services:{email:false, social:true},  postingType:"regular",     postingFlags:{noFriday:false, stories:false}},
+  {id:"r-ritz",    name:"Ritz Carlton SB",      type:"developer", scope:"Per Request",  services:{email:false, social:true},  postingType:"regular",     postingFlags:{noFriday:false, stories:false}},
+];
+
 const EB_DEFAULTS = [
   {id:"susan",   name:"Susan Trevisa",       scope:"4 Eblasts/MO"},
   {id:"madelyn", name:"Madelyn Mejia",        scope:"3 Eblasts/MO"},
@@ -122,18 +151,19 @@ function newEblast(designers)  { return {id:uid(),name:"",assetType:"E-blast",st
 function newSmPost()    { return {id:uid(),name:"",status:"Drafted",needsDesign:false,urgent:false}; }
 function newSmBatch(w)  { return {id:uid(),week:w,status:"Drafted",startDate:"",endDate:"",posts:[]}; }
 
-function buildEbData() {
+function buildEbData(registry) {
+  const src = registry ? registry.filter(c=>c.services?.email) : EB_DEFAULTS;
   const d={};
   MONTHS.forEach((_,mi)=>{
-    d[mi]=EB_DEFAULTS.map(c=>({clientId:c.id+mi,clientName:c.name,scope:c.scope,expanded:false,eblasts:[newEblast()]}));
+    d[mi]=src.map(c=>({clientId:c.id+mi,clientName:c.name,scope:c.scope||"Per Request",expanded:false,eblasts:[newEblast()]}));
   });
   return d;
 }
-function buildSmData() {
+function buildSmData(registry) {
+  const src = registry ? registry.filter(c=>c.services?.social) : [...SM_AGENTS.map(a=>({...a,smType:"agent"})),...SM_DEVS.map(d=>({...d,smType:"dev"}))];
   const d={};
   MONTHS.forEach((_,mi)=>{
-    const mk=(c,type)=>({clientId:c.id+mi,clientName:c.name,note:c.note,type,expanded:false,batches:WEEKS.map(w=>newSmBatch(w))});
-    d[mi]=[...SM_AGENTS.map(c=>mk(c,"agent")),...SM_DEVS.map(c=>mk(c,"dev"))];
+    d[mi]=src.map(c=>({clientId:c.id+mi,clientName:c.name,note:c.note||"",type:c.type==="agent"||c.smType==="agent"?"agent":"dev",expanded:false,batches:WEEKS.map(w=>newSmBatch(w))}));
   });
   return d;
 }
@@ -875,7 +905,7 @@ function EbRow({eblast,onChange,onRemove,canRemove,monthIdx,openPickerId,setOpen
   );
 }
 
-function EbClientCard({client,onUpdate,onRemove,monthIdx,designers}){
+function EbClientCard({client,onUpdate,onRemove,monthIdx,designers,registry}){
   const [openPickerId,setOpenPickerId]=useState(null);
   function upd(eid,f,v){
     if(f==="_week"){
@@ -894,6 +924,7 @@ function EbClientCard({client,onUpdate,onRemove,monthIdx,designers}){
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"13px 16px",cursor:"pointer",userSelect:"none"}} onClick={()=>onUpdate({...client,expanded:!client.expanded})}>
         <span style={{fontSize:10,color:"#9CA3AF",transform:client.expanded?"rotate(90deg)":"rotate(0)",transition:"transform .2s",flexShrink:0,width:12}}>▶</span>
         <div style={{flex:1,minWidth:0,fontSize:13.5,fontWeight:700,color:"#1a1a2e",fontFamily:"'DM Sans',sans-serif",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{client.clientName}</div>
+        {(()=>{const rc=registry&&registry.find(r=>r.name===client.clientName);return rc?<ClientTypeBadge type={rc.type}/>:null;})()}
         {urgCnt>0&&<span style={{fontSize:10.5,fontWeight:700,color:"#BE123C",background:"#FFF1F2",border:"1px solid #FECDD3",borderRadius:20,padding:"1px 8px",whiteSpace:"nowrap"}}>🚨 {urgCnt}</span>}
         <div onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:4}}>
           {client.editScope
@@ -1249,7 +1280,7 @@ function YearOverview({data, onClose}){
   );
 }
 
-function EblastPipeline({data, setData, designers, setDesigners}){
+function EblastPipeline({data, setData, designers, setDesigners, registry}){
   const [month,setMonth]=useState(new Date().getMonth());
   const [view,setView]=useState(()=>{const v={};MONTHS.forEach((_,i)=>v[i]=1);return v;});
   const [sorted,setSorted]=useState(false);
@@ -1281,7 +1312,8 @@ function EblastPipeline({data, setData, designers, setDesigners}){
   function addPreset(p){setData({...data,[month]:[...data[month],{clientId:uid(),clientName:p.name,scope:p.scope,expanded:true,eblasts:[newEblast()]}]});}
 
   const currentNames=new Set(raw.map(c=>c.clientName));
-  const availablePresets=EB_DEFAULTS.filter(d=>!currentNames.has(d.name));
+  const emailClients = registry ? registry.filter(c=>c.services?.email) : EB_DEFAULTS;
+  const availablePresets=emailClients.filter(d=>!currentNames.has(d.name));
   const tot=raw.reduce((a,c)=>a+c.eblasts.length,0);
   const dep=raw.reduce((a,c)=>a+c.eblasts.filter(e=>e.status==="Deployed").length,0);
   const urgTotal=raw.reduce((a,c)=>a+c.eblasts.filter(e=>e.urgent).length,0);
@@ -1323,7 +1355,7 @@ function EblastPipeline({data, setData, designers, setDesigners}){
             </div>
           </div>
         )}
-        {cur===0&&<div style={{display:"flex",flexDirection:"column",gap:9}}>{displayClients.map(c=><EbClientCard key={c.clientId} client={c} onUpdate={d=>upd(c.clientId,d)} onRemove={()=>rem(c.clientId)} monthIdx={month} designers={designers}/>)}{displayClients.length===0&&<EmptyMsg msg={search?`No results for "${search}".`:`No clients for ${MONTHS[month]}.`} onAdd={search?undefined:()=>setShowAdd(true)}/>}</div>}
+        {cur===0&&<div style={{display:"flex",flexDirection:"column",gap:9}}>{displayClients.map(c=><EbClientCard key={c.clientId} client={c} onUpdate={d=>upd(c.clientId,d)} onRemove={()=>rem(c.clientId)} monthIdx={month} designers={designers} registry={registry}/>)}{displayClients.length===0&&<EmptyMsg msg={search?`No results for "${search}".`:`No clients for ${MONTHS[month]}.`} onAdd={search?undefined:()=>setShowAdd(true)}/>}</div>}
         {cur===1&&<EbStatusBreakdown clients={raw} monthIdx={month} onUpdateAsset={updAsset}/>}
         {cur===2&&<EbDesignerView clients={raw} designers={designers}/>}
       </div>
@@ -1643,7 +1675,7 @@ function SmNewClientForm({onAdd, onCancel}){
   );
 }
 
-function SocialMediaTab({data, setData}){
+function SocialMediaTab({data, setData, registry}){
   const [month,setMonth]=useState(new Date().getMonth());
   const [view,setView]=useState(1);
   const [sorted,setSorted]=useState(false);
@@ -1665,7 +1697,7 @@ function SocialMediaTab({data, setData}){
   }
 
   const currentNames=new Set(clients.map(c=>c.clientName));
-  const allPresets=[...SM_AGENTS.map(a=>({...a,type:"agent"})),...SM_DEVS.map(d=>({...d,type:"dev"}))];
+  const allPresets = registry ? registry.filter(c=>c.services?.social).map(c=>({...c,type:c.type,note:""})) : [...SM_AGENTS.map(a=>({...a,type:"agent"})),...SM_DEVS.map(d=>({...d,type:"dev"}))];
   const availablePresets=allPresets.filter(p=>!currentNames.has(p.name));
 
   const totP=clients.reduce((a,c)=>a+c.batches.reduce((b,bt)=>b+bt.posts.length,0),0);
@@ -1789,19 +1821,29 @@ function getWeekKey(d){
   return fmtDateKey(mon);
 }
 
-function PostingSchedule({checks, setChecks}){
+function PostingSchedule({checks, setChecks, registry}){
   const today = new Date();
   const [selDate, setSelDate] = useState(today);
   const [sorted, setSorted] = useState(false);
   const [showCal, setShowCal] = useState(false);
   const [calMonth, setCalMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
 
+  // Derive posting lists from registry
+  const psClients = registry ? registry.filter(c=>c.services?.social) : [...PS_REGULAR,...PS_PER_REQUEST];
+  const psRegular = psClients.filter(c=>(c.postingType||"regular")==="regular");
+  const psPerRequest = psClients.filter(c=>c.postingType==="per-request");
+
   const weekKey = getWeekKey(selDate);
-  const dayChecks = checks[weekKey] || buildChecks(weekKey);
+  function buildDynamicChecks(){
+    const m={};
+    psClients.forEach(c=>{m[c.id]={mon:false,tue:false,wed:false,thu:false,fri:false};});
+    return m;
+  }
+  const dayChecks = checks[weekKey] || buildDynamicChecks();
 
   function toggle(clientId, day){
-    const cur = checks[weekKey] || buildChecks(weekKey);
-    const next = {...checks, [weekKey]: {...cur, [clientId]: {...cur[clientId], [day]: !cur[clientId][day]}}};
+    const cur = checks[weekKey] || buildDynamicChecks();
+    const next = {...checks, [weekKey]: {...cur, [clientId]: {...(cur[clientId]||{mon:false,tue:false,wed:false,thu:false,fri:false}), [day]: !(cur[clientId]?.[day]||false)}}};
     setChecks(next);
   }
 
@@ -1889,8 +1931,8 @@ function PostingSchedule({checks, setChecks}){
         </span>
       </div>
 
-      <PSSection title="Regular Posting Schedule" badge="Monday, Wednesday, Friday" badgeColor={{bg:"#EFF6FF",text:"#1D4ED8"}} borderColor="#3B82F6" clients={PS_REGULAR} sorted={sorted} dayChecks={dayChecks} onToggle={toggle}/>
-      <PSSection title="Per Request" badge="As Needed" badgeColor={{bg:"#F5F3FF",text:"#7C3AED"}} borderColor="#8B5CF6" clients={PS_PER_REQUEST} sorted={sorted} dayChecks={dayChecks} onToggle={toggle}/>
+      <PSSection title="Regular Posting Schedule" badge="Monday, Wednesday, Friday" badgeColor={{bg:"#EFF6FF",text:"#1D4ED8"}} borderColor="#3B82F6" clients={psRegular} sorted={sorted} dayChecks={dayChecks} onToggle={toggle}/>
+      <PSSection title="Per Request" badge="As Needed" badgeColor={{bg:"#F5F3FF",text:"#7C3AED"}} borderColor="#8B5CF6" clients={psPerRequest} sorted={sorted} dayChecks={dayChecks} onToggle={toggle}/>
 
       {/* Posting History */}
       {Object.keys(checks).length>0&&(()=>{
@@ -1910,7 +1952,7 @@ function PostingSchedule({checks, setChecks}){
                 const monD=new Date(dk+"T12:00:00");
                 const friD=new Date(monD.getFullYear(),monD.getMonth(),monD.getDate()+4);
                 const label="Week of "+monD.toLocaleDateString("en-US",{month:"short",day:"numeric"})+" – "+friD.toLocaleDateString("en-US",{month:"short",day:"numeric"});
-                const allClients=[...PS_REGULAR,...PS_PER_REQUEST];
+                const allClients=psClients;
                 const checked=allClients.filter(cl=>allDays.some(day=>dc[cl.id]?.[day]));
                 return (
                   <div key={dk} style={{background:"#fff",borderRadius:10,border:"1px solid #E5E2DC",padding:"10px 16px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
@@ -1932,15 +1974,192 @@ function PostingSchedule({checks, setChecks}){
   );
 }
 
+
+function ClientTypeBadge({type}){
+  const ag = type==="agent";
+  return <span style={{fontSize:10.5,fontWeight:700,padding:"2px 9px",borderRadius:20,border:`1px solid ${ag?"#BFDBFE":"#BBF7D0"}`,color:ag?"#1D4ED8":"#15803D",background:ag?"#EFF6FF":"#F0FDF4",whiteSpace:"nowrap"}}>{ag?"Agent":"Developer"}</span>;
+}
+
+function RegistryModal({registry, onSave, onClose}){
+  const [list, setList] = useState(registry.map(c=>({...c, services:{...c.services}, postingFlags:{...c.postingFlags}})));
+  const [editId, setEditId] = useState(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newClient, setNewClient] = useState({name:"",type:"agent",scope:"Per Request",services:{email:true,social:false},postingType:"regular",postingFlags:{noFriday:false,stories:false}});
+  const [confirmRemove, setConfirmRemove] = useState(null);
+  const SCOPES = ["Per Request","2 Eblasts/MO","3 Eblasts/MO","4 Eblasts/MO","5 Eblasts/MO"];
+
+  function updateClient(id, field, value){
+    setList(p=>p.map(c=>c.id===id?{...c,[field]:value}:c));
+  }
+  function updateService(id, svc, val){
+    setList(p=>p.map(c=>c.id===id?{...c,services:{...c.services,[svc]:val}}:c));
+  }
+  function updateFlag(id, flag, val){
+    setList(p=>p.map(c=>c.id===id?{...c,postingFlags:{...c.postingFlags,[flag]:val}}:c));
+  }
+  function addClient(){
+    if(!newClient.name.trim()) return;
+    const nc = {...newClient, id:"r-"+uid(), postingFlags:{...newClient.postingFlags}, services:{...newClient.services}};
+    setList(p=>[...p,nc]);
+    setNewClient({name:"",type:"agent",scope:"Per Request",services:{email:true,social:false},postingType:"regular",postingFlags:{noFriday:false,stories:false}});
+    setShowAdd(false);
+  }
+  function removeClient(id){
+    setList(p=>p.filter(c=>c.id!==id));
+    setConfirmRemove(null);
+  }
+
+  const editing = list.find(c=>c.id===editId);
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={onClose}>
+      <div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:780,maxHeight:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,.25)"}} onClick={e=>e.stopPropagation()}>
+        {/* Header */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"20px 24px",borderBottom:"1px solid #E5E2DC",flexShrink:0}}>
+          <div>
+            <h2 style={{margin:0,fontSize:18,fontFamily:"'DM Serif Display',serif",color:"#1a1a2e"}}>Client Registry</h2>
+            <p style={{margin:"3px 0 0",fontSize:12,color:"#9CA3AF"}}>{list.length} clients · single source of truth across all tabs</p>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setShowAdd(v=>!v)} style={{background:"#F0EEE9",border:"none",borderRadius:8,padding:"8px 14px",cursor:"pointer",fontSize:12.5,fontWeight:700,color:"#1a1a2e"}}>+ Add Client</button>
+            <button onClick={()=>onSave(list)} style={{background:"#1a1a2e",color:"#E8E4DC",border:"none",borderRadius:8,padding:"8px 16px",cursor:"pointer",fontSize:12.5,fontWeight:700}}>Save Changes</button>
+            <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:"#9CA3AF",padding:"4px 8px"}}>✕</button>
+          </div>
+        </div>
+
+        {/* Add client form */}
+        {showAdd&&(
+          <div style={{padding:"16px 24px",background:"#F8F7F4",borderBottom:"1px solid #E5E2DC",flexShrink:0}}>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>
+              <div style={{flex:"1 1 160px"}}>
+                <label style={{display:"block",fontSize:9.5,fontWeight:800,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:".06em",marginBottom:4}}>Name</label>
+                <input value={newClient.name} onChange={e=>setNewClient(p=>({...p,name:e.target.value}))} placeholder="Client name..." style={{width:"100%",border:"1.5px solid #E5E2DC",borderRadius:7,padding:"7px 10px",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+              <div style={{flex:"0 0 120px"}}>
+                <label style={{display:"block",fontSize:9.5,fontWeight:800,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:".06em",marginBottom:4}}>Type</label>
+                <select value={newClient.type} onChange={e=>setNewClient(p=>({...p,type:e.target.value}))} style={{width:"100%",border:"1.5px solid #E5E2DC",borderRadius:7,padding:"7px 10px",fontSize:13,outline:"none",background:"#fff"}}>
+                  <option value="agent">Agent</option>
+                  <option value="developer">Developer</option>
+                </select>
+              </div>
+              <div style={{flex:"0 0 140px"}}>
+                <label style={{display:"block",fontSize:9.5,fontWeight:800,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:".06em",marginBottom:4}}>Scope</label>
+                <select value={newClient.scope} onChange={e=>setNewClient(p=>({...p,scope:e.target.value}))} style={{width:"100%",border:"1.5px solid #E5E2DC",borderRadius:7,padding:"7px 10px",fontSize:13,outline:"none",background:"#fff"}}>
+                  {SCOPES.map(s=><option key={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{display:"block",fontSize:9.5,fontWeight:800,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:".06em",marginBottom:4}}>Services</label>
+                <div style={{display:"flex",gap:8}}>
+                  {[["email","📧 Email"],["social","📱 Social"]].map(([k,l])=>(
+                    <label key={k} style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer",fontSize:12,fontWeight:600,color:newClient.services[k]?"#4338CA":"#9CA3AF"}}>
+                      <input type="checkbox" checked={newClient.services[k]} onChange={e=>setNewClient(p=>({...p,services:{...p.services,[k]:e.target.checked}}))} style={{accentColor:"#6366F1"}}/>
+                      {l}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:7}}>
+                <button onClick={addClient} style={{background:"#1a1a2e",color:"#fff",border:"none",borderRadius:7,padding:"7px 14px",cursor:"pointer",fontSize:12.5,fontWeight:700}}>Add</button>
+                <button onClick={()=>setShowAdd(false)} style={{background:"#F3F4F6",color:"#6B7280",border:"none",borderRadius:7,padding:"7px 12px",cursor:"pointer",fontSize:12.5}}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Column headers */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 90px 130px 90px 90px 90px 80px 36px",gap:8,padding:"8px 24px",background:"#FAFAF9",borderBottom:"1px solid #E5E2DC",flexShrink:0}}>
+          {["Client","Type","Scope","Email","Social","Posting","Schedule",""].map((h,i)=>(
+            <div key={h+i} style={{fontSize:9.5,fontWeight:800,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:".06em",textAlign:i>=3?"center":"left"}}>{h}</div>
+          ))}
+        </div>
+
+        {/* Client rows */}
+        <div style={{overflowY:"auto",flex:1}}>
+          {list.map(client=>{
+            const isEdit = editId===client.id;
+            return (
+              <div key={client.id} style={{display:"grid",gridTemplateColumns:"1fr 90px 130px 90px 90px 90px 80px 36px",gap:8,padding:"10px 24px",borderBottom:"1px solid #F3F4F6",alignItems:"center",background:isEdit?"#FAFAF9":"#fff"}}
+                onMouseEnter={e=>e.currentTarget.style.background="#FAFAF9"} onMouseLeave={e=>e.currentTarget.style.background=isEdit?"#FAFAF9":"#fff"}>
+                {/* Name */}
+                {isEdit
+                  ? <input value={client.name} onChange={e=>updateClient(client.id,"name",e.target.value)} style={{border:"1.5px solid #6366F1",borderRadius:6,padding:"4px 8px",fontSize:13,fontWeight:600,outline:"none",fontFamily:"'DM Sans',sans-serif"}}/>
+                  : <span style={{fontSize:13,fontWeight:600,color:"#1a1a2e",cursor:"pointer"}} onClick={()=>setEditId(client.id)}>{client.name}</span>
+                }
+                {/* Type */}
+                {isEdit
+                  ? <select value={client.type} onChange={e=>updateClient(client.id,"type",e.target.value)} style={{border:"1.5px solid #E5E2DC",borderRadius:6,padding:"4px 6px",fontSize:11,outline:"none",background:"#fff"}}>
+                      <option value="agent">Agent</option>
+                      <option value="developer">Developer</option>
+                    </select>
+                  : <ClientTypeBadge type={client.type}/>
+                }
+                {/* Scope */}
+                {isEdit
+                  ? <select value={client.scope||"Per Request"} onChange={e=>updateClient(client.id,"scope",e.target.value)} style={{border:"1.5px solid #E5E2DC",borderRadius:6,padding:"4px 6px",fontSize:11,outline:"none",background:"#fff"}}>
+                      {SCOPES.map(s=><option key={s}>{s}</option>)}
+                    </select>
+                  : <ScopeBadge scope={client.scope}/>
+                }
+                {/* Email service */}
+                <div style={{textAlign:"center"}}>
+                  <input type="checkbox" checked={!!client.services?.email} onChange={e=>updateService(client.id,"email",e.target.checked)} style={{width:16,height:16,accentColor:"#6366F1",cursor:"pointer"}}/>
+                </div>
+                {/* Social service */}
+                <div style={{textAlign:"center"}}>
+                  <input type="checkbox" checked={!!client.services?.social} onChange={e=>updateService(client.id,"social",e.target.checked)} style={{width:16,height:16,accentColor:"#6366F1",cursor:"pointer"}}/>
+                </div>
+                {/* Posting type — only relevant if social */}
+                <div style={{textAlign:"center"}}>
+                  {client.services?.social
+                    ? <select value={client.postingType||"regular"} onChange={e=>updateClient(client.id,"postingType",e.target.value)} style={{border:"1px solid #E5E2DC",borderRadius:5,padding:"3px 4px",fontSize:10,outline:"none",background:"#fff",color:"#374151"}}>
+                        <option value="regular">Regular</option>
+                        <option value="per-request">Per Request</option>
+                      </select>
+                    : <span style={{color:"#E5E2DC",fontSize:12}}>—</span>
+                  }
+                </div>
+                {/* Posting flags — stories + noFriday */}
+                <div style={{display:"flex",flexDirection:"column",gap:2,alignItems:"center"}}>
+                  {client.services?.social&&[["stories","📖"],["noFriday","No Fri"]].map(([flag,lbl])=>(
+                    <label key={flag} style={{display:"flex",alignItems:"center",gap:3,cursor:"pointer",fontSize:10,color:client.postingFlags?.[flag]?"#7C3AED":"#C4BFBA",whiteSpace:"nowrap"}}>
+                      <input type="checkbox" checked={!!client.postingFlags?.[flag]} onChange={e=>updateFlag(client.id,flag,e.target.checked)} style={{accentColor:"#8B5CF6",width:11,height:11}}/>
+                      {lbl}
+                    </label>
+                  ))}
+                </div>
+                {/* Remove */}
+                <div style={{textAlign:"center"}}>
+                  {confirmRemove===client.id
+                    ? <div style={{display:"flex",gap:3}}>
+                        <button onClick={()=>removeClient(client.id)} style={{background:"#F43F5E",color:"#fff",border:"none",borderRadius:4,padding:"2px 6px",fontSize:10,cursor:"pointer",fontWeight:700}}>Yes</button>
+                        <button onClick={()=>setConfirmRemove(null)} style={{background:"#F3F4F6",color:"#6B7280",border:"none",borderRadius:4,padding:"2px 6px",fontSize:10,cursor:"pointer"}}>No</button>
+                      </div>
+                    : <button onClick={()=>setConfirmRemove(client.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#D1D5DB",fontSize:14,lineHeight:1}} onMouseEnter={e=>e.currentTarget.style.color="#F43F5E"} onMouseLeave={e=>e.currentTarget.style.color="#D1D5DB"}>✕</button>
+                  }
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Confirm remove modal */}
+    </div>
+  );
+}
+
 // ── App ────────────────────────────────────────────────────────────────────
 const TABS = ["Digital Assets Pipeline","Social Media Content Production","Posting Schedule"];
 
 export default function App(){
   const [tab,setTab]=useState(0);
-  const [ebData,setEbData]=useState(buildEbData);
-  const [smData,setSmData]=useState(buildSmData);
+  const [ebData,setEbData]=useState(()=>buildEbData(null));
+  const [smData,setSmData]=useState(()=>buildSmData(null));
   const [psChecks,setPsChecks]=useState({});
   const [designers,setDesigners]=useState(["Eddy","Claus"]);
+  const [registry,setRegistry]=useState(DEFAULT_REGISTRY);
+  const [showRegistry,setShowRegistry]=useState(false);
   const [syncStatus,setSyncStatus]=useState("idle"); // idle | saving | saved | error
   const [liveStatus,setLiveStatus]=useState("connecting"); // connecting | live | offline
   const [loading,setLoading]=useState(true);
@@ -1952,7 +2171,7 @@ export default function App(){
   useEffect(()=>{
     (async()=>{
       try{
-        const [eb,sm,ps,ds]=await Promise.all([dbLoad("eblast_data"),dbLoad("sm_data"),dbLoad("ps_checks"),dbLoad("designers")]);
+        const [eb,sm,ps,ds,reg]=await Promise.all([dbLoad("eblast_data"),dbLoad("sm_data"),dbLoad("ps_checks"),dbLoad("designers"),dbLoad("client_registry")]);
         // JSON storage converts integer keys to strings — convert them back
         function fixKeys(obj){ if(!obj) return null; const r={}; Object.entries(obj).forEach(([k,v])=>{r[isNaN(k)?k:parseInt(k)]=v;}); return r; }
         // Deduplicate clients by clientId (guards against any double-save corruption)
@@ -1970,6 +2189,7 @@ export default function App(){
         if(fixedSm&&Object.keys(fixedSm).length) setSmData(fixedSm);
         if(ps&&Object.keys(ps).length) setPsChecks(ps);
         if(ds&&Array.isArray(ds)&&ds.length) setDesigners(ds);
+        if(reg&&Array.isArray(reg)&&reg.length) setRegistry(reg);
       }catch(e){ console.error("Load error",e); }
       setLoading(false);
     })();
@@ -1990,6 +2210,7 @@ export default function App(){
           else if(key==="sm_data") setSmData(dedupeRT(fixKeys(value)));
           else if(key==="ps_checks") setPsChecks(value);
           else if(key==="designers") setDesigners(value);
+          else if(key==="client_registry") setRegistry(value);
         }
       )
       .subscribe((status)=>{
@@ -2024,6 +2245,7 @@ export default function App(){
 
   function updateEbData(d){ setEbData(d); scheduleSave("eblast_data",d); }
   function updateDesigners(d){ setDesigners(d); scheduleSave("designers",d); }
+  function updateRegistry(reg){ setRegistry(reg); scheduleSave("client_registry",reg); }
   function updateSmData(d){ setSmData(d); scheduleSave("sm_data",d); }
   function updatePsChecks(d){ setPsChecks(d); scheduleSave("ps_checks",d); }
 
@@ -2070,6 +2292,7 @@ export default function App(){
             <span style={{fontFamily:"'DM Sans',sans-serif",fontSize:12,fontWeight:500,color:"#9a9a8a",letterSpacing:"0.04em"}}>Marketing Operations Board</span>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:16}}>
+            <button onClick={()=>setShowRegistry(true)} style={{background:"rgba(255,255,255,.08)",border:"1px solid rgba(255,255,255,.15)",borderRadius:7,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:600,color:"#E8E4DC",display:"flex",alignItems:"center",gap:5}}>👥 Clients</button>
             <LiveDot/>
             <SyncDot/>
             <div style={{fontSize:11,color:"#6B6860"}}>{new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"})}</div>
@@ -2079,11 +2302,12 @@ export default function App(){
           {TABS.map((t,i)=><button key={t} onClick={()=>setTab(i)} style={{background:"none",border:"none",borderBottom:tab===i?"2.5px solid #1a1a2e":"2.5px solid transparent",padding:"12px 16px",cursor:"pointer",fontSize:12.5,fontFamily:"'DM Sans',sans-serif",fontWeight:tab===i?700:500,color:tab===i?"#1a1a2e":"#6B6860",marginBottom:-1,whiteSpace:"nowrap"}}>{t}</button>)}
         </div>
         <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
-          {tab===0&&<EblastPipeline data={ebData} setData={updateEbData} designers={designers} setDesigners={updateDesigners}/>}
-          {tab===1&&<SocialMediaTab data={smData} setData={updateSmData}/>}
-          {tab===2&&<PostingSchedule checks={psChecks} setChecks={updatePsChecks}/>}
+          {tab===0&&<EblastPipeline data={ebData} setData={updateEbData} designers={designers} setDesigners={updateDesigners} registry={registry}/>}
+          {tab===1&&<SocialMediaTab data={smData} setData={updateSmData} registry={registry}/>}
+          {tab===2&&<PostingSchedule checks={psChecks} setChecks={updatePsChecks} registry={registry}/>}
         </div>
       </div>
+      {showRegistry&&<RegistryModal registry={registry} onSave={reg=>{updateRegistry(reg);setShowRegistry(false);}} onClose={()=>setShowRegistry(false)}/>}
     </>
   );
 }
