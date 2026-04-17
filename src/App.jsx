@@ -1747,7 +1747,7 @@ function PSCheckCell({clientId, day, disabled, checked, onToggle}){
 }
 
 function PSTableRow({client, dayChecks, onToggle}){
-  const dean = !!client.stories;
+  const dean = !!(client.postingFlags?.stories || client.stories);
   return (
     <div style={{display:"grid",gridTemplateColumns:"1fr 100px 1fr 1fr 1fr 1fr 1fr",alignItems:"center",padding:"10px 16px",borderBottom:"1px solid #F3F4F6",gap:8}}
       onMouseEnter={e=>e.currentTarget.style.background="#FAFAF9"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
@@ -1760,7 +1760,7 @@ function PSTableRow({client, dayChecks, onToggle}){
       <div style={{display:"flex",justifyContent:"center"}}><PSCheckCell clientId={client.id} day="tue" disabled={!dean} checked={dean?(dayChecks[client.id]?.tue||false):false} onToggle={onToggle}/></div>
       <div style={{display:"flex",justifyContent:"center"}}><PSCheckCell clientId={client.id} day="wed" disabled={false} checked={dayChecks[client.id]?.wed||false} onToggle={onToggle}/></div>
       <div style={{display:"flex",justifyContent:"center"}}><PSCheckCell clientId={client.id} day="thu" disabled={!dean} checked={dean?(dayChecks[client.id]?.thu||false):false} onToggle={onToggle}/></div>
-      <div style={{display:"flex",justifyContent:"center"}}><PSCheckCell clientId={client.id} day="fri" disabled={!!client.noFriday} checked={dayChecks[client.id]?.fri||false} onToggle={onToggle}/></div>
+      <div style={{display:"flex",justifyContent:"center"}}><PSCheckCell clientId={client.id} day="fri" disabled={!!(client.postingFlags?.noFriday || client.noFriday)} checked={dayChecks[client.id]?.fri||false} onToggle={onToggle}/></div>
     </div>
   );
 }
